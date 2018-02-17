@@ -1,0 +1,399 @@
+#+TITLE: Kaggle Toxic Comments Competition
+#+PROPERTY: header-args :session *Python* :results none 
+
+* Overview
+
+https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge
+
+
+References
+- https://github.com/bhargavvader/personal/tree/master/notebooks/text_analysis_tutorial
+- https://github.com/skipgram/modern-nlp-in-python/blob/master/executable/Modern_NLP_in_Python.ipynb
+
+
+* Notes
+** <2018-02-07 Wed> Initial look at the data
+
+
+#+BEGIN_SRC python 
+import pandas as pd
+
+data = pd.read_csv('data/train.csv')
+
+
+data.columns.tolist()
+#+END_SRC
+
+#+BEGIN_SRC python
+
+xx = data[['toxic','severe_toxic','obscene','threat', 'insult', 'identity_hate']]
+xx =  data.columns.tolist()[2:]
+
+yy = xx.sum(axis=1)
+xx[yy > 2]
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+
+In [62]: xx.sum()
+Out[62]: 
+toxic            15294
+severe_toxic      1595
+obscene           8449
+threat             478
+insult            7877
+identity_hate     1405
+dtype: int64
+
+ yy.value_counts()
+Out[55]: 
+0    143346
+1      6360
+3      4209
+2      3480
+4      1760
+5       385
+6        31
+dtype: int64
+
+In [57]: sum(yy > 0)
+Out[57]: 16225
+
+In [58]: sum(yy > 0)/data.shape[0]
+Out[58]: 0.10167887648758234
+
+In [61]: xx.T.dot(xx)
+Out[61]: 
+               toxic  severe_toxic  obscene  threat  insult  identity_hate
+toxic          15294          1595     7926     449    7344           1302
+severe_toxic    1595          1595     1517     112    1371            313
+obscene         7926          1517     8449     301    6155           1032
+threat           449           112      301     478     307             98
+insult          7344          1371     6155     307    7877           1160
+identity_hate   1302           313     1032      98    1160           1405
+
+#+END_EXAMPLE
+
+
+#+BEGIN_SRC python
+import spacy
+
+nlp = spacy.load('en')
+foo = nlp(data['comment_text'].iloc[0])
+
+for t in foo:
+   print("{} {}".format(t.text, t.lemma_))
+
+#+END_SRC
+
+** <2018-02-08 Thu>
+
+Following this example
+https://github.com/skipgram/modern-nlp-in-python/blob/master/executable/Modern_NLP_in_Python.ipynb
+
+#+BEGIN_SRC python
+import pandas as pd
+import spacy
+
+
+data = pd.read_csv('data/train.csv')
+nlp  = spacy.load('en')
+
+def comments_gen(comments):
+    for c in comments:
+        yield unicode(c,'utf-8')
+
+def keep_token(t):
+    return (t.is_alpha and 
+            not (t.is_space or t.is_punct or 
+                 t.is_stop or t.like_num))
+
+def lematize_comment(comment):
+    return [ t.lemma_ for t in comment if keep_token(t)]
+            
+
+def lematize_comments(comments):
+    docs = []
+    for c in nlp.pipe(comments_gen(comments), batch_size=100, n_threads=4):
+        docs.append(lematize_comment(c))
+    return docs
+
+
+data_small = data.iloc[0:10000]
+docs = lematize_comments(data_small['comment_text'])
+
+#+END_SRC
+
+#+BEGIN_SRC python
+from gensim.corpora import Dictionary
+from gensim.models.ldamulticore import LdaMulticore
+from gensim.models.hdpmodel import HdpModel
+from gensim.models.tfidfmodel import TfidfModel
+from gensim.matutils import sparse2full
+
+comments_dictionary = Dictionary(docs)
+comments_dictionary.filter_extremes(no_below=10, no_above=0.2)
+comments_dictionary.compactify()
+
+comments_corpus = [comments_dictionary.doc2bow(d) for d in docs]
+comments_tfidf = TfidfModel(comments_corpus)
+
+lda = LdaMulticore(comments_tfidf[comments_corpus],
+                   num_topics=20,
+                   id2word=comments_dictionary,
+                   workers=3)
+
+topic_vecs = [sparse2full(c, lda.num_topics) for c in lda[comments_tfidf[comments_corpus]]]
+#+END_SRC
+
+
+#+BEGIN_SRC python
+import numpy as np
+from sklearn import svm
+from sklearn import metrics
+
+topic_array = np.vstack(topic_vecs)
+
+labels = np.array(data_small['toxic'])
+
+
+clf = svm.SVC(probability=True, kernel='linear')
+clf.fit(topic_array, labels)
+
+predicted = clf.predict(topic_array)
+metrics.confusion_matrix(labels, predicted)
+
+#+END_SRC
+
+
+Classifying based on LDA doesn't seem to work well. Trying classifying on 
+words.
+
+#+BEGIN_SRC python
+
+comments_vecs = [sparse2full(c, len(comments_dictionary)) for c in comments_tfidf[comments_corpus]]
+
+
+clf = svm.SVC(probability=True, kernel='linear')
+clf.fit(comments_vecs, labels)
+
+predicted = clf.predict(comments_vecs)
+metrics.confusion_matrix(labels, predicted)
+
+#+END_SRC
+
+** <2018-02-11 Sun> Finding descriimitive words
+
+How to find the most descrimitive words? Found this scikit learn
+example using a CHI2 test
+
+http://scikit-learn.org/stable/auto_examples/text/document_classification_20newsgroups.html
+
+
+#+BEGIN_SRC python
+from sklearn.feature_selection import SelectKBest, chi2
+
+ch2 = SelectKBest(chi2, k=100)
+X_train = ch2.fit_transform(comments_vecs, labels)
+
+
+clf = svm.SVC(probability=True, kernel='linear')
+clf.fit(X_train, labels)
+
+predicted = clf.predict(X_train)
+metrics.confusion_matrix(labels, predicted)
+
+
+
+[comments_dictionary.id2token[i] for i in ch2.get_support(indices=True)]
+
+xx = [comments_dictionary.id2token[i] for i in ch2.get_support(indices=True)]
+aa = [[(t.lemma_, t.vector) for t in nlp(c)] for c in xx]
+aa = [nlp(c) for c in xx]
+
+#+END_SRC
+
+
+#+BEGIN_SRC python
+from sklearn.feature_selection import SelectFpr
+
+fpr = SelectFpr(chi2, alpha=0.025)
+X_train = fpr.fit_transform(comments_vecs, labels)
+
+clf = svm.SVC(probability=True, kernel='linear')
+clf.fit(X_train, labels)
+
+predicted = clf.predict(X_train)
+metrics.accuracy_score(labels, predicted)
+metrics.f1_score(labels, predicted)
+metrics.confusion_matrix(labels, predicted)
+
+xx = [comments_dictionary.id2token[i] for i in fpr.get_support(indices=True)]
+aa = [[(t.lemma_, t.vector) for t in nlp(c)] for c in xx]
+aa = [nlp(c) for c in xx]
+
+
+#+END_SRC
+
+#+BEGIN_SRC python
+
+from sklearn.preprocessing import normalize
+normed_matrix = normalize(X_train, axis=1, norm='l1')
+
+tmp = []
+num_scores = normed_matrix.shape[1]
+for i in range(normed_matrix.shape[0]):
+    scores = X_train[i,:]
+    avgvec = np.sum([aa[j].vector * scores[j] for j in range(num_scores)], axis=0, keepdims=True)
+
+    
+#+END_SRC
+
+** <2018-02-12 Mon> Starting to consolidate prototype code
+
+#+BEGIN_SRC python
+import numpy as np
+import pandas as pd
+import spacy
+
+from gensim.corpora import Dictionary
+from gensim.models.tfidfmodel import TfidfModel
+from gensim.matutils import sparse2full
+
+from sklearn.feature_selection import SelectFpr, chi2
+
+from sklearn import svm
+from sklearn import metrics
+
+
+
+
+dataFname = 'data/train.csv'
+data = pd.read_csv(dataFname)
+labelColnames =  data.columns.tolist()[2:]
+data['any']   = data[labelColnames].apply(lambda x: int(any(x)), axis=1)
+
+nlp  = spacy.load('en_core_web_md')
+
+def keep_token(t):
+    return (t.is_alpha and 
+            not (t.is_space or t.is_punct or 
+                 t.is_stop or t.like_num))
+
+def lematize_comment(comment):
+    return [ t.lemma_ for t in comment if keep_token(t)]
+            
+
+def lematize_comments(comments):
+    docs = []
+    for c in nlp.pipe(comments, batch_size=100, n_threads=4):
+        docs.append(lematize_comment(c))
+    return docs
+
+
+# lemmatize the comments
+data_orig = data
+data = data.iloc[0:10000]
+docs = lematize_comments(data['comment_text'])
+
+# Convert comments into word vectors
+comments_dictionary = Dictionary(docs)
+comments_dictionary.filter_extremes(no_below=10, no_above=0.3)
+comments_dictionary.compactify()
+
+comments_corpus = [comments_dictionary.doc2bow(d) for d in docs]
+model_tfidf     = TfidfModel(comments_corpus)
+comments_tfidf  = model_tfidf[comments_corpus]
+comments_vecs   = [sparse2full(c, len(comments_dictionary)) for c in comments_tfidf]
+
+
+# Find most descrimitive words for any of the labels
+labels = np.array(data['any'])
+model_fpr = SelectFpr(chi2, alpha=0.025)
+model_fpr.fit(comments_vecs, labels)
+
+
+# foo here
+X_train = model_fpr.transform(comments_vecs)
+fpr_tokens = [nlp(t) for t in [comments_dictionary[i] for i in model_fpr.get_support(indices=True)]]
+tmp = []
+num_scores = X_train.shape[1]
+for i in range(X_train.shape[0]):
+    scores = X_train[i,:]
+    avgvec = np.sum([fpr_tokens[j].vector * scores[j] for j in range(num_scores)], axis=0, keepdims=True)
+    tmp.append(avgvec)
+
+X_train = np.vstack(tmp)
+
+clf = svm.SVC(probability=True, kernel='rbf')
+clf.fit(X_train, labels)
+
+predicted = clf.predict(X_train)
+metrics.accuracy_score(labels, predicted)
+metrics.f1_score(labels, predicted)
+metrics.confusion_matrix(labels, predicted)
+
+data_test = data_orig[10000:11000]
+test_docs = lematize_comments(data_test['comment_text'])
+test_corpus = [comments_dictionary.doc2bow(d) for d in test_docs]
+test_tfidf  = model_tfidf[test_corpus]
+test_vecs   = [sparse2full(c, len(comments_dictionary)) for c in test_tfidf]
+
+X_test = model_fpr.transform(test_vecs)
+tmp = []
+for i in range(X_test.shape[0]):
+    scores = X_test[i,:]
+    avgvec = np.sum([fpr_tokens[j].vector * scores[j] for j in range(num_scores)], axis=0, keepdims=True)
+    tmp.append(avgvec)
+X_test = np.vstack(tmp)
+
+
+correct = np.array(data_test['any'])
+predicted = clf.predict(X_test)
+
+metrics.accuracy_score(correct, predicted)
+metrics.f1_score(correct, predicted)
+metrics.confusion_matrix(correct, predicted)
+
+#+END_SRC
+
+What about another field?
+
+#+BEGIN_SRC python
+
+categories = ['toxic',
+ 'severe_toxic',
+ 'obscene',
+ 'threat',
+ 'insult',
+ 'identity_hate']
+
+models  = {}
+for cat in categories:
+    labels = data[cat]
+    models[cat] = svm.SVC(probability=True, kernel='rbf')
+    models[cat].fit(X_train, labels) 
+
+results = []
+for cat in categories:
+    labels = data[cat]
+    predicted = models[cat].predict(X_train)
+    results.append({'cat': cat, 
+           'accuracy': metrics.accuracy_score(labels, predicted),
+           'f1': metrics.f1_score(labels, predicted)})
+
+
+#+END_SRC
+
+
+figuring out if data can be written to disk as a csv
+
+#+BEGIN_SRC python
+
+tmp = data.drop(['comment_text'], axis=1)
+tmp2 = pd.DataFrame(X_train)
+tmp2.rename(columns=lambda x: 'F'+str(x), inplace=True)
+
+tmp3 = pd.concat([tmp, tmp2], axis=1)
+
+#+END_SRC
