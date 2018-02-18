@@ -94,6 +94,7 @@ if  __name__ == '__main__':
 
 
     if FLAGS.doTest:
+        print('Reading test data...')
         data = pd.read_pickle(FLAGS.testfile)
 
         colnames = data.columns.tolist()
@@ -104,11 +105,13 @@ if  __name__ == '__main__':
 
         categories =  models.keys()
         for cat in categories:
+            print('Predicting {}....'.format(cat))
             predicted = models[cat].predict_proba(avg_vecs)
             data[cat] = predicted[:,1]
 
         # NB - to be safe, make sure columns are in the same order as the sample
         #      submission
+        print('Writing submission file..')
         data = data[['id','toxic','severe_toxic','obscene','threat','insult','identity_hate']]
         data.to_csv(FLAGS.subfile, index=False, float_format='%.5f')
 
