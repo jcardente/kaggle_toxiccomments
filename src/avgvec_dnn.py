@@ -22,9 +22,9 @@ from timeit import default_timer as timer
 FLAGS = None
 
 PARAMS = {
-    'learningRates': [0.001,0.0001],    
-    'numEpochs' : [8,2],
-    'batchSize': 64,
+    'learningRates': [0.001], #,0.0001],    
+    'numEpochs' : [1],
+    'batchSize': 256,
     'validationPercentage': 10
 }
 
@@ -130,7 +130,7 @@ if __name__ == '__main__':
     learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
     global_step = tf.Variable(0, name='global_step',trainable=False)    
     with tf.device("/gpu:0"):
-        dense1 = tf.layers.dense(inputs=input_vecs, units = 1024, activation=tf.nn.relu)
+        dense1 = tf.layers.dense(inputs=input_vecs, units = 2048, activation=tf.nn.relu)
         drop1  = tf.layers.dropout(inputs=dense1, rate=0.4, training=isTraining)
 
         dense2 = tf.layers.dense(inputs=dense1, units = 1024, activation=tf.nn.relu)
@@ -151,11 +151,18 @@ if __name__ == '__main__':
         
         predictions = tf.nn.sigmoid(logits, name="predictions")
 
-    with tf.device("/cpu:0"):
-        accuracy, accuracy_op = tf.metrics.accuracy(input_labels, predictions, name="accuracy")
 
+        diff_op = tf.cast(labels,tf.float32) - predictions
+        norm_op = reduce_sum(tf.norm(diff_op, ord=2,axis=0))
+        
+
+        
+#    with tf.device("/cpu:0"):
+#        accuracy, accuracy_op = tf.metrics.accuracy(input_labels, predictions, name="accuracy")
+
+        
     tf.summary.scalar('loss',loss)
-    tf.summary.scalar('accuracy',accuracy)
+    tf.summary.scalar('accuracy',myacc_op)
     summary_op = tf.summary.merge_all()
 
     writer              = tf.summary.FileWriter('logs', graph=tf.get_default_graph())    
@@ -185,7 +192,7 @@ if __name__ == '__main__':
                              input_vecs:  batch['vecs'],
                              input_labels: batch['labels'],
                              isTraining: 1}
-                _ , batch_loss, batch_accuracy, summary, step = sess.run([training_op, loss, accuracy_op, summary_op, global_step], feed_dict=feed_dict)
+                _ , batch_loss, batch_accuracy, summary, step = sess.run([training_op, loss, myacc_op, summary_op, global_step], feed_dict=feed_dict)
                 batchCount += 1                
                 if batchCount % batchReportInterval == 0:
                     timeEnd = timer()
@@ -213,7 +220,7 @@ if __name__ == '__main__':
                              input_labels: batch['labels'],
                              isTraining: 0}
                 
-                batch_accuracy = sess.run([accuracy_op], feed_dict=feed_dict)
+                batch_accuracy = sess.run([myacc_op], feed_dict=feed_dict)
                 batchCount += 1            
                 if batchCount % batchReportInterval == 0:
                     timeEnd = timer()

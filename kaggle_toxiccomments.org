@@ -397,3 +397,39 @@ tmp2.rename(columns=lambda x: 'F'+str(x), inplace=True)
 tmp3 = pd.concat([tmp, tmp2], axis=1)
 
 #+END_SRC
+** <2018-02-18 Sun> Metrics experiment
+
+#+BEGIN_SRC python
+tf.reset_default_graph()
+
+ph1 = tf.placeholder(tf.int32, shape=[10,5])
+ph2 = tf.placeholder(tf.int32, shape=[10,5])
+eq_op = tf.equal(ph1,ph2)
+_, acc_op = tf.metrics.accuracy(ph1,ph2)
+
+size_op = tf.size(eq_op)
+sum_op = tf.reduce_sum(tf.cast(eq_op, tf.int32))
+
+myacc_op = sum_op / size_op
+
+#diff_op = tf.cast(ph1-ph2,tf.float32)
+#fro_op = tf.norm(diff_op, ord=2,axis=0)
+
+x1 = np.random.randint(0,high=2, size=(10,5))
+x2 = np.random.randint(0,high=2, size=(10,5))
+
+linit_op = tf.local_variables_initializer()
+ginit_op = tf.global_variables_initializer()
+
+sess = tf.InteractiveSession()
+sess.run([linit_op, ginit_op])
+
+sess.run(acc_op,feed_dict={ph1: x1, ph2:x1})
+sess.run(acc_op,feed_dict={ph1: x1, ph2:x2})
+sess.run(eq_op,feed_dict={ph1: x1, ph2:x2})
+sess.run(sum_op,feed_dict={ph1: x1, ph2:x2})
+sess.run(fro_op,feed_dict={ph1: x1, ph2:x2})
+
+sess.run(myacc_op, feed_dict={ph1: x1, ph2:x1})
+
+#+END_SRC
