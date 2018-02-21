@@ -9,7 +9,9 @@ https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge
 References
 - https://github.com/bhargavvader/personal/tree/master/notebooks/text_analysis_tutorial
 - https://github.com/skipgram/modern-nlp-in-python/blob/master/executable/Modern_NLP_in_Python.ipynb
-
+- http://ruder.io/deep-learning-nlp-best-practices/index.html
+- https://www.oreilly.com/learning/perform-sentiment-analysis-with-lstms-using-tensorflow
+- https://www.kaggle.com/jhoward/nb-svm-strong-linear-baseline
 
 * Notes
 ** <2018-02-07 Wed> Initial look at the data
