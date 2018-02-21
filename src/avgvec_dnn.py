@@ -22,10 +22,10 @@ from timeit import default_timer as timer
 FLAGS = None
 
 PARAMS = {
-    'learningRates': [0.001], #,0.0001],    
-    'numEpochs' : [1],
+    'learningRates': [0.001,0.0001],    
+    'numEpochs' : [10,4],
     'batchSize': 256,
-    'validationPercentage': 10,
+    'validationPercentage': 0,
     'threshold': 0.5,
     'embedding_size': 300,
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
@@ -138,12 +138,12 @@ def score_predictions(labels, probs):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-t',type=str,
-                        default='data/train.csv',
+                        default='data/derived/train_avgvec.pkl',
                         dest='trainfile',
                         help='Training data file')
 
     parser.add_argument('-p',type=str,
-                        default='data/test.csv',
+                        default='data/derived/test_avgvec.pkl',
                         dest='testfile',
                         help='Test data file')
 
@@ -178,10 +178,6 @@ if __name__ == '__main__':
                         dest='checkpointName',
                         help='Checkpoint filename')
         
-    # parser.add_argument('-m',type=str,
-    #                     required=True,
-    #                     dest='modelfile',
-    #                     help='File to load/store model from/to')
     
     FLAGS, unparsed = parser.parse_known_args()
     categories = PARAMS['categories'] 
@@ -194,7 +190,7 @@ if __name__ == '__main__':
     learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
     threshold     = tf.constant(PARAMS['threshold'], dtype=tf.float32, name='probit_threshold')
     global_step   = tf.Variable(0, name='global_step',trainable=False)    
-    with tf.device("/cpu:0"):
+    with tf.device("/gpu:0"):
         dense1 = tf.layers.dense(inputs=input_vecs, units = 2048, activation=tf.nn.relu)
         drop1  = tf.layers.dropout(inputs=dense1, rate=0.4, training=isTraining)
 
