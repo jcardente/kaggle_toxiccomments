@@ -435,3 +435,104 @@ sess.run(fro_op,feed_dict={ph1: x1, ph2:x2})
 sess.run(myacc_op, feed_dict={ph1: x1, ph2:x1})
 
 #+END_SRC
+
+** <2018-02-21 Wed> Experimenting with custom word embeddings
+
+
+#+BEGIN_SRC python
+import pandas as pd
+import spacy
+
+data_full = pd.read_csv('data/train.csv')
+nlp       = spacy.load('en')
+
+
+def keep_token(t):
+    return not (t.is_space or t.is_punct or 
+                 t.is_stop or t.like_num)
+
+def lematize_comment(comment):
+    return [ t.lemma_ for t in comment if keep_token(t)]
+            
+
+def lematize_comments(comments):
+    docs = []
+    for c in nlp.pipe(comments, batch_size=100, n_threads=4):
+        docs.append(lematize_comment(c))
+    return docs
+
+
+# lemmatize the comments
+data = data_full.iloc[0:10000]
+docs = lematize_comments(data['comment_text'])
+
+
+from gensim.corpora import Dictionary
+
+comments_dictionary = Dictionary(docs)
+
+from gensim.models import Word2Vec
+
+model = Word2Vec(sentences=docs, size=300)
+words = list(model.wv.vocab)
+
+xx = [i for i,d in enumerate(docs) if 'f*ck' in d]
+
+#+END_SRC
+
+
+
+#+BEGIN_SRC python
+
+import re
+
+foo = [c for c in data['comment_text'] if re.search(r'f\*ck',c)]
+
+foo_dict = Dictionary(foo)
+
+foo_model = Word2Vec(sentences=foo, size=100)
+
+foo_words = list(foo_model.wv.vocab)
+
+
+cls = spacy.util.get_lang_class('en')
+nlp = cls()
+xx = [t for t in nlp(foo[1])]
+
+
+#+END_SRC
+
+
+#+BEGIN_SRC python
+nlp = spacy.load('en', disable=['ner'])
+docs = lematize_comments(data['comment_text'])
+#+END_SRC
+
+#+BEGIN_SRC python
+
+import gensim.parsing.preprocessing as preprocessing
+ dd = preprocessing.preprocess_documents(data['comment_text'].tolist())
+
+
+CUSTOM_FILTERS = [lambda x: x.lower(), preprocessing.strip_tags, preprocessing.strip_punctuation]
+dd = [preprocessing.preprocess_string(c, CUSTOM_FILTERS) for c in data['comment_text']]
+   
+
+#+END_SRC
+
+
+#+BEGIN_SRC python
+from gensim.models.phrases import Phrases, Phraser
+bigram_transformer = Phraser(Phrases(docs))
+model = Word2Vec(bigram_transformer[docs], size=300)
+
+#+END_SRC
+
+Fast text works really well.
+
+#+BEGIN_SRC python
+from gensim.models.fasttext import FastText
+
+ft_model = FastText(bigram_transformer[docs], min_count=1)
+
+#+END_SRC
