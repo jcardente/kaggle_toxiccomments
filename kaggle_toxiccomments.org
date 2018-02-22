@@ -533,6 +533,6 @@ Fast text works really well.
 #+BEGIN_SRC python
 from gensim.models.fasttext import FastText
 
-ft_model = FastText(bigram_transformer[docs], min_count=1)
+ft_model = FastText(bigram_transformer[docs], min_count=1, workers=16)
 
 #+END_SRC

@@ -18,26 +18,24 @@ import spacy
 from gensim.corpora import Dictionary
 from gensim.models.tfidfmodel import TfidfModel
 from gensim.matutils import sparse2full
+from gensim.models.fasttext import FastText
 
 from sklearn.feature_selection import SelectFpr, chi2
  
 FLAGS = None
 
 
-
-
 def keep_token(t):
-    return (t.is_alpha and 
-            not (t.is_space or t.is_punct or 
-                 t.is_stop or t.like_num))
+    return not (t.is_space or t.is_punct or 
+                 t.is_stop or t.like_num)
 
 def lematize_comment(comment):
     return [ t.lemma_ for t in comment if keep_token(t)]
             
 
-def lematize_comments(comments):
+def lematize_comments(comments, nthreads=4):
     docs = []
-    for c in nlp.pipe(comments, batch_size=100, n_threads=4):
+    for c in nlp.pipe(comments, batch_size=100, n_threads=nthreads):
         docs.append(lematize_comment(c))
     return docs
 
@@ -63,16 +61,20 @@ if  __name__ == '__main__':
 
     parser.add_argument('-d',type=str,
                         dest='dictFile',
-                        default='data/derived/comments_dict.dat')
+                        default='models/comments_dict.dat')
 
     parser.add_argument('-t',type=str,
                         dest='tfidfFile',
-                        default='data/derived/comments_tfidf.dat')
+                        default='models/comments_tfidf.dat')
 
     parser.add_argument('-c',type=str,
                         dest='chi2File',
-                        default='data/derived/comments_chi2indices.npy')
-    
+                        default='models/comments_chi2indices.npy')
+
+    parser.add_argument('-e',type=str,
+                        dest='embeddingsFile',
+                        default='models/comments_embeddings.npy')
+        
     FLAGS, unparsed = parser.parse_known_args()
 
     # NB - a convert only flag makes sense as a command line
@@ -84,19 +86,22 @@ if  __name__ == '__main__':
     data = pd.read_csv(FLAGS.infile)
 
     # XXX - uncomment for debugging
-    #data = data.iloc[0:10000,:]
+    # data = data.iloc[0:10000,:]
     
     if doTrain:
         labelColnames =  data.columns.tolist()[2:]        
         data['any']   = data[labelColnames].apply(lambda x: int(any(x)), axis=1)
         
-    nlp  = spacy.load('en_core_web_md')
+    #nlp  = spacy.load('en_core_web_md', disable=['ner'])
+    nlp  = spacy.load('en', disable=['ner'])
 
     print("Lematizing comments....")
     comments_text = data['comment_text']
     data.drop(['comment_text'], inplace=True, axis=1)
-    docs = lematize_comments(comments_text)
+    docs = lematize_comments(comments_text,nthreads=16)
 
+    # XXX Add phrasing
+    
     comments_dictionary = None
     if doTrain:
         print("Creating dictionary....")
@@ -140,16 +145,19 @@ if  __name__ == '__main__':
 
 
     print("Calculating tfidf weighted word2vec vectors...")
-    chi2_vecs  = comments_vecs[:,chi2_features]
-    fpr_tokens = [nlp(t) for t in [comments_dictionary[i] for i in chi2_features]]
-    avg_vecs   = []
-    num_scores = len(chi2_features)
-    for i in range(chi2_vecs.shape[0]):
-        scores = chi2_vecs[i,:]
-        avgvec = np.sum([fpr_tokens[j].vector * scores[j] for j in range(num_scores)], axis=0, keepdims=True)
-        avg_vecs.append(avgvec)
-        
-    avg_vecs = np.vstack(avg_vecs)
+    chi2_tfidf_vecs = comments_vecs[:,chi2_features]
+    fpr_embeddings  = None
+    if doTrain:
+        print('Fitting FastText embedding model...')
+        ft_model = FastText(sentences=docs, size=300, workers=8)
+        fpr_embeddings = [ft_model.wv[t] for t in [comments_dictionary[i] for i in chi2_features]]
+        fpr_embeddings = np.vstack(fpr_embeddings)
+        np.save(FLAGS.embeddingsFile, fpr_embeddings)
+    else:
+        print('Loading FastText embedding model..')
+        fpr_embeddings = np.load(FLAGS.embeddingsFile)
+
+    avg_vecs = np.dot(chi2_tfidf_vecs, fpr_embeddings)
     avg_vecs = pd.DataFrame(avg_vecs)
     avg_vecs.rename(columns=lambda x: 'F'+str(x), inplace=True)
 
