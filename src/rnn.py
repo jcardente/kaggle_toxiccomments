@@ -62,7 +62,15 @@ def text2vecs(text, embeddings, maxwords):
     vecs   = [embeddings[t] for t in tokens]
     nvecs  = len(vecs)
 
-    vecs = np.vstack(vecs)
+    if nvecs == 0:
+        # NB - this happens when the comment contains
+        #      non-english text using different character
+        #      sets (eg Arabic). For now, we'll just use
+        #      the NONE vector
+        vecs = [embeddings['--NONE--']]
+        nvecs = 1
+        
+    vecs = np.vstack(vecs)        
     if nvecs < maxwords:
         topad = maxwords - nvecs
         vecs  = np.pad(vecs, [[0,topad],[0,0]], 'constant')
@@ -82,7 +90,7 @@ def inputGenerator(df, embeddings, PARAMS):
         comments  = batchData['comment_text'].tolist()
         
         batch = {}
-        batch['ids']  = batchData['comment_text'].tolist()
+        batch['ids']  = batchData['id'].tolist()
 
         tmp = [text2vecs(c, embeddings, PARAMS['maxwords']) for c in comments]
 
@@ -358,7 +366,7 @@ if __name__ == '__main__':
             
 
             print('Loading test data....')
-            test_data = pd.read_pickle(FLAGS.testfile)    
+            test_data = pd.read_csv(FLAGS.testfile)    
 
             print("Starting inference....")
             batchCount   = 0
