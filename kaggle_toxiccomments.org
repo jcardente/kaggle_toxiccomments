@@ -536,3 +536,41 @@ from gensim.models.fasttext import FastText
 ft_model = FastText(bigram_transformer[docs], min_count=1, workers=16)
 
 #+END_SRC
+** <2018-02-22 Thu> Debugging
+
+Had problems with following data after preprocessing
+
+#+BEGIN_SRC python
+comments_text = data['comment_text']
+bad= [i for i,c in enumerate(comments_text) if isinstance(c,float)]
+
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+[4482,
+ 17173,
+ 23529,
+ 25050,
+ 25718,
+ 38313,
+ 39799,
+ 43642,
+ 47072,
+ 55871,
+ 57795,
+ 61758,
+ 62881,
+ 71168,
+ 76734,
+ 82232,
+ 82681,
+ 93867,
+ 100782,
+ 122919,
+ 139976,
+ 140477,
+ 146671,
+ 148563,
+ 148865,
+ 151379]
+#+END_EXAMPLE

@@ -29,7 +29,10 @@ def lematize_comment(comment):
 def lematize_comments(comments, nlp, nthreads=4):
     docs = []
     for c in nlp.pipe(comments, batch_size=100, n_threads=nthreads):
-        docs.append(lematize_comment(c))
+        lc = lematize_comment(c)
+        if len(lc) == 0:
+            lc =['--NONE--']
+        docs.append(lc)
     return docs
 
 

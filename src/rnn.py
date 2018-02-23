@@ -23,8 +23,8 @@ from gensim.models.fasttext import FastText
 FLAGS = None
 
 PARAMS = {
-    'learningRates': [0.001,0.0001],    
-    'numEpochs' : [10,4],
+    'learningRates': [0.01,0.001,0.0001],    
+    'numEpochs' : [5,5,2],
     'batchSize': 256,
     'validationPercentage': 0,
     'threshold': 0.5,
@@ -220,13 +220,23 @@ if __name__ == '__main__':
     threshold     = tf.constant(PARAMS['threshold'], dtype=tf.float32, name='probit_threshold')
     global_step   = tf.Variable(0, name='global_step',trainable=False)
     
-    with tf.device("/cpu:0"):
-        basic_cell      = tf.contrib.rnn.BasicRNNCell(num_units=128)
-        outputs, states = tf.nn.dynamic_rnn(cell=basic_cell,
+    with tf.device("/gpu:0"):
+
+        #used = tf.sign(tf.reduce_max(tf.abs(input_vecs), 2))
+        #length = tf.reduce_sum(used, 1)
+        #length = tf.cast(length, tf.int32)        
+
+        layers    = [1024, 1024]
+        rnn_cells = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
+        stacked_cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
+        outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,
                                             inputs=input_vecs,
-                                            sequence_length=input_lengths,
                                             dtype=tf.float32)
-        logits = tf.layers.dense(states, units=len(categories))
+        flat_states = tf.concat(states[len(layers)-1], axis=1) 
+
+        dense1 = tf.layers.dense(flat_states, units=1024, activation=tf.nn.relu)
+        dense2 = tf.layers.dense(dense1, units=1024, activation=tf.nn.relu)        
+        logits = tf.layers.dense(dense2, units=len(categories))
 
         loss   = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
                                                          labels=tf.cast(input_labels,dtype=tf.float32))
@@ -335,4 +345,57 @@ if __name__ == '__main__':
                 print('     ROC AUC: {:.2f}'.format(scores['roc_auc']))
 
 
+        if FLAGS.doTest:
+
+            if not FLAGS.doTrain:
+                chkpFullName = os.path.join(FLAGS.checkpointDir, FLAGS.checkpointName)
+                print('Restoring model {}'.format(chkpFullName))            
+                if not isfile(chkpFullName):
+                    print("Error, checkpoint file doesnt exist {}")
+                    sys.exit(1)
+                saver.restore(sess,chkpFullName)
+            
+
+            print('Loading test data....')
+            test_data = pd.read_pickle(FLAGS.testfile)    
+
+            print("Starting inference....")
+            batchCount   = 0
+            infTimeStart = timer()            
+            timeStart    = infTimeStart
+            inf_ids      = []
+            inf_probits  = []
+            for batch in inputGenerator(test_data, embeddings, PARAMS):
+                feed_dict = {learning_rate: epochLearningRate,
+                             input_vecs:  batch['vecs'],
+                             input_lengths: batch['lengths'],                             
+                             isTraining: 0}
+
+                batch_probits = sess.run(probits, feed_dict=feed_dict)
+                inf_ids.extend(batch['ids'])
+                inf_probits.append(batch_probits)
+
+                batchCount += 1            
+                if batchCount % batchReportInterval == 0:
+                    timeEnd = timer()
+                    infRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
+                    print("Batch {} Rate {:.2f}".format(batchCount, infRate))
+                    timeStart = timer()
+
+            infTimeEnd = timer()
+            print("Total Inference Time {:.2f}m".format((infTimeEnd-infTimeStart)/60))
+
+
+            inf_probits = np.vstack(inf_probits)
+            df = pd.DataFrame(data=inf_probits, index=inf_ids, columns = categories)
+            df.index.name = 'id'
+
+            print("Saving submission....")
+            
+            df.to_csv(FLAGS.subfile, index=True, float_format='%.5f')
+
+
+
+            
+                
 
