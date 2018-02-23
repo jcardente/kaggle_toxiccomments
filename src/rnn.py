@@ -24,7 +24,7 @@ FLAGS = None
 
 PARAMS = {
     'learningRates': [0.01,0.001,0.0001],    
-    'numEpochs' : [5,5,2],
+    'numEpochs' : [10,5,2],
     'batchSize': 256,
     'validationPercentage': 0,
     'threshold': 0.5,
@@ -208,6 +208,7 @@ if __name__ == '__main__':
 
     # Load word embeddings
     embeddings = FastText.load(FLAGS.embedfile)
+    dictionary = {w:i for i,w in enumerate(list(embeddings.wv.vocab))}
 
 
     # DEFINE THE GRAPH
@@ -226,7 +227,7 @@ if __name__ == '__main__':
         #length = tf.reduce_sum(used, 1)
         #length = tf.cast(length, tf.int32)        
 
-        layers    = [1024, 1024]
+        layers    = [128, 128, 128]
         rnn_cells = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
         stacked_cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
         outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,

@@ -11,6 +11,7 @@
 import argparse
 import numpy as np
 import pandas as pd
+import pickle
 
 from gensim.corpora import Dictionary
 from gensim.models.tfidfmodel import TfidfModel
@@ -39,6 +40,15 @@ if __name__ == '__main__':
                         default=5,
                         dest='windowsize',
                         help='Size of window fragments (one side)')
+    parser.add_argument('--train',
+                        action='store_true',
+                        default=False,
+                        dest='doTrain',
+                        help='Train a model')
+
+    parser.add_argument('-c',type=str,
+                        dest='chi2file',
+                        default='models/chi2scores.pkl')
     
     FLAGS, unparsed = parser.parse_known_args()
 
@@ -51,19 +61,31 @@ if __name__ == '__main__':
     comments_text = data['comment_text']
     docs = [c.split(' ') for c in comments_text]
 
-    print('Building dictionary...')
-    comments_dictionary = Dictionary(docs)
-    comments_corpus     = [comments_dictionary.doc2bow(d) for d in docs]
+    term_scores = {}
+    if FLAGS.doTrain:
+        print('Building dictionary...')
+        comments_dictionary = Dictionary(docs)
+        comments_corpus     = [comments_dictionary.doc2bow(d) for d in docs]
 
-    print('Building TFIDF model..')
-    model_tfidf     = TfidfModel(comments_corpus)
-    comments_tfidf  = model_tfidf[comments_corpus]
-    comments_vecs   = corpus2csc(comments_tfidf).T
+        print("Creating tfidf model...")        
+        model_tfidf     = TfidfModel(comments_corpus)
 
-    print('Ranking terms...')
-    chivals, pvals = chi2(comments_vecs, labels)
-    term_scores    = {t:pvals[i] for i,t in comments_dictionary.iteritems()}
+        print("Converting to tfidf vectors...")
+        comments_tfidf  = model_tfidf[comments_corpus]
+        comments_vecs   = corpus2csc(comments_tfidf).T
 
+        print('Ranking terms...')
+        chivals, pvals = chi2(comments_vecs, labels)
+        term_scores    = {t:pvals[i] for i,t in comments_dictionary.iteritems()}
+        with open(FLAGS.chi2file, 'wb') as f:
+            pickle.dump(term_scores, f, protocol=pickle.HIGHEST_PROTOCOL)
+            
+    else:
+        print('Loading term scores...')
+        with open(FLAGS.chi2file, 'rb') as f:
+            term_scores = pickle.load(f)
+        
+        
     print('Extracting fragments...')
     new_comments = []
     for d in docs:
