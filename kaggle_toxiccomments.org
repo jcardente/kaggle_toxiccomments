@@ -12,6 +12,7 @@ References
 - http://ruder.io/deep-learning-nlp-best-practices/index.html
 - https://www.oreilly.com/learning/perform-sentiment-analysis-with-lstms-using-tensorflow
 - https://www.kaggle.com/jhoward/nb-svm-strong-linear-baseline
+- https://stackoverflow.com/questions/41789133/what-are-c-state-and-m-state-in-tensorflow-lstm
 
 * Notes
 ** <2018-02-07 Wed> Initial look at the data
@@ -574,3 +575,98 @@ bad= [i for i,c in enumerate(comments_text) if isinstance(c,float)]
  148865,
  151379]
 #+END_EXAMPLE
+
+** <2018-02-23 Fri> Debugging RNN inference
+
+Having problems converting test text to vectors using embeddings
+
+#+BEGIN_SRC 
+In [320]: 
+for i in range(len(comments_text)):
+     try:
+          text2vecs(comments_text[i], embeddeds, maxwords)
+     except ValueError:
+          print('Index {} is bad'.format(i))
+ 
+/home/jcardent/local/miniconda3/bin/ipython:60: DeprecationWarning: Call to deprecated `__contains__` (Method will be removed in 4.0.0, use self.wv.__contains__() instead).
+/home/jcardent/local/miniconda3/bin/ipython:62: DeprecationWarning: Call to deprecated `__getitem__` (Method will be removed in 4.0.0, use self.wv.__getitem__() instead).
+Index 34 is bad
+Index 114 is bad
+Index 819 is bad
+Index 1278 is bad
+Index 1711 is bad
+Index 1762 is bad
+Index 2424 is bad
+Index 2628 is bad
+Index 2887 is bad
+Index 3404 is bad
+Index 3891 is bad
+Index 4075 is bad
+Index 4674 is bad
+Index 5565 is bad
+Index 6171 is bad
+Index 6647 is bad
+Index 6660 is bad
+Index 7322 is bad
+Index 7549 is bad
+Index 7711 is bad
+Index 7805 is bad
+Index 9932 is bad
+Index 10067 is bad
+Index 10783 is bad
+Index 10912 is bad
+Index 10948 is bad
+Index 10988 is bad
+Index 11068 is bad
+Index 11470 is bad
+Index 11873 is bad
+Index 12314 is bad
+Index 12701 is bad
+Index 13412 is bad
+Index 14721 is bad
+Index 14999 is bad
+Index 15232 is bad
+Index 15340 is bad
+Index 15786 is bad
+Index 15889 is bad
+Index 16105 is bad
+Index 16439 is bad
+Index 16903 is bad
+Index 17489 is bad
+Index 17590 is bad
+Index 17788 is bad
+Index 18122 is bad
+Index 18482 is bad
+Index 18721 is bad
+Index 18756 is bad
+Index 19487 is bad
+Index 19747 is bad
+Index 21102 is bad
+Index 22542 is bad
+Index 23632 is bad
+Index 23742 is bad
+Index 23772 is bad
+Index 24622 is bad
+Index 25050 is bad
+Index 25827 is bad
+Index 26582 is bad
+Index 27478 is bad
+Index 28228 is bad
+Index 28247 is bad
+Index 29005 is bad
+Index 29307 is bad
+Index 29397 is bad
+Index 29570 is bad
+Index 29636 is bad
+Index 29935 is bad
+Index 30592 is bad
+Index 31038 is bad
+Index 31461 is bad
+Index 31649 is bad
+Index 31823 is bad
+Index 31990 is bad
+Index 32082 is bad
+....
+#+END_SRC
+
+Looks like all of these are foreign language comments.
