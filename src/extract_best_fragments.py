@@ -40,12 +40,7 @@ if __name__ == '__main__':
                         default=5,
                         dest='windowsize',
                         help='Size of window fragments (one side)')
-    parser.add_argument('--train',
-                        action='store_true',
-                        default=False,
-                        dest='doTrain',
-                        help='Train a model')
-
+    
     parser.add_argument('-c',type=str,
                         dest='chi2file',
                         default='models/chi2scores.pkl')
@@ -61,29 +56,8 @@ if __name__ == '__main__':
     comments_text = data['comment_text']
     docs = [c.split(' ') for c in comments_text]
 
-    term_scores = {}
-    if FLAGS.doTrain:
-        print('Building dictionary...')
-        comments_dictionary = Dictionary(docs)
-        comments_corpus     = [comments_dictionary.doc2bow(d) for d in docs]
-
-        print("Creating tfidf model...")        
-        model_tfidf     = TfidfModel(comments_corpus)
-
-        print("Converting to tfidf vectors...")
-        comments_tfidf  = model_tfidf[comments_corpus]
-        comments_vecs   = corpus2csc(comments_tfidf).T
-
-        print('Ranking terms...')
-        chivals, pvals = chi2(comments_vecs, labels)
-        term_scores    = {t:pvals[i] for i,t in comments_dictionary.iteritems()}
-        with open(FLAGS.chi2file, 'wb') as f:
-            pickle.dump(term_scores, f, protocol=pickle.HIGHEST_PROTOCOL)
-            
-    else:
-        print('Loading term scores...')
-        with open(FLAGS.chi2file, 'rb') as f:
-            term_scores = pickle.load(f)
+    with open(FLAGS.chi2file, 'rb') as f:
+        term_scores = pickle.load(f)
         
         
     print('Extracting fragments...')
@@ -93,10 +67,10 @@ if __name__ == '__main__':
         if len(d) <= FLAGS.maxwords:
             new_d = d
         else:
-            d_pvals = [(i,term_scores[t]) if t in term_scores else (i,0) for i,t in enumerate(d)]
-            d_pvals.sort(reverse=True, key=lambda x: x[1])
+            d_chivals = [(i,term_scores[t]) if t in term_scores else (i,0) for i,t in enumerate(d)]
+            d_chivals.sort(reverse=True, key=lambda x: x[1])
 
-            extents = [(max(0,i-FLAGS.windowsize), min(len(d)-1,i+FLAGS.windowsize)) for i,_ in d_pvals]
+            extents = [(max(0,i-FLAGS.windowsize), min(len(d)-1,i+FLAGS.windowsize)) for i,_ in d_chivals]
             keep = set()
             while len(extents) > 0:
                ext  = extents.pop(0)
