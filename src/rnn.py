@@ -24,12 +24,12 @@ FLAGS = None
 
 PARAMS = {
     'learningRates': [0.001,0.0001],    
-    'numEpochs' : [1,1],
+    'numEpochs' : [10,5],
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
     'maxwords': 50,
-    'vocabsize': 1000,
+    'vocabsize': 5000,
     'nonetoken': '--NONE--',
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 }
@@ -249,7 +249,7 @@ if __name__ == '__main__':
     # Load word embeddings and chi2 scores
     embeddings = loadEmbeddings(FLAGS.embedfile)
     chi2scores = loadChi2Scores(FLAGS.chi2file)
-    
+    chi2scores = {k:v for k,v in chi2scores.items() if k in embeddings}
 
     # Pick the best terms to use and then get the embeddings for
     # them
@@ -272,13 +272,17 @@ if __name__ == '__main__':
     with tf.device("/gpu:0"):
 
         input_vecs = tf.gather(tfembeddings, input_ids)
-        layers    = [256, 256]
-        rnn_cells = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
+        layers     = [256, 256]
+        rnn_cells  = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
         stacked_cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
         outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,
                                             inputs=input_vecs,
                                             dtype=tf.float32)        
-        rnn_out = outputs[:,-1,:]        
+        #rnn_out = outputs[:,-1,:]
+        batch_range = tf.range(tf.shape(input_ids)[0])
+        batch_outs  = tf.stack([batch_range, input_lengths], axis=1)
+        rnn_out     = tf.gather_nd(outputs, batch_outs)
+        
         dense1 = tf.layers.dense(rnn_out, units=1024, activation=tf.nn.relu)
         dense2 = tf.layers.dense(dense1, units=1024, activation=tf.nn.relu)        
         logits = tf.layers.dense(dense2, units=len(categories))
