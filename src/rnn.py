@@ -107,14 +107,8 @@ def inputGenerator(df, vocabScores, t2id, PARAMS):
         yield batch
             
 
-def score_predictions(labels, probs):
-    scores = {
-        'accuracy': 0.0,
-        'precision': 0.0,
-        'recall': 0.0,
-        'f1': 0.0,
-        'roc_auc': 0.0,
-        }
+def score_predictions(categories, labels, probs, PARAMS):
+    scores = {}
     
     if labels.shape != probs.shape:
         print('Uh oh, labels and probabilities shapes dont match')
@@ -125,32 +119,47 @@ def score_predictions(labels, probs):
     recalls    = []
     f1s        = []
     rocs       = []
+    npos       = 0
     for i in range(probs.shape[1]):
-        class_labels = labels[:,i]
-        class_probs  = probs[:,i]
-        class_pred   = np.round(class_probs)
-        
-        accuracies.append(metrics.accuracy_score(class_labels, class_pred))
-        if np.any(class_labels == 1) and np.any(class_pred == 1):
-            precisions.append(metrics.precision_score(class_labels, class_pred))
-            recalls.append(metrics.recall_score(class_labels, class_pred))
-            f1s.append(metrics.f1_score(class_labels, class_pred))
-        else:
-            precisions.append(0)
-            recalls.append(0)
-            f1s.append(0)
-            
-        try:
-            roc = metrics.roc_auc_score(class_labels, class_probs)
-        except ValueError:
-            roc = 0
-        rocs.append(roc)
+        class_labels  = labels[:,i]
+        class_probs   = probs[:,i]
+        class_pred    = np.zeros_like(class_probs)# round(class_probs)
+        class_pred[np.where(class_probs >= PARAMS['threshold'])] = 1
+        class_npos    = np.sum(class_labels == 1)    
 
-    scores['accuracy'] = np.mean(accuracies)
-    scores['precision'] = np.mean(precisions)
-    scores['recall'] = np.mean(recalls)
-    scores['f1'] = np.mean(f1s)
-    scores['roc_auc'] = np.mean(rocs)
+        tmp = {}
+        tmp['npos'] = class_npos
+        tmp['accuracy'] = metrics.accuracy_score(class_labels, class_pred)
+        if np.any(class_labels == 1) and np.any(class_pred == 1):
+            tmp['precision'] = metrics.precision_score(class_labels, class_pred)
+            tmp['recall']    = metrics.recall_score(class_labels, class_pred)
+            tmp['f1']        = metrics.f1_score(class_labels, class_pred)
+        else:
+            tmp['precision'] = 0
+            tmp['recall']    = 0
+            tmp['f1']        = 0
+                                                                    
+        try:
+            tmp['roc'] = metrics.roc_auc_score(class_labels, class_probs)
+        except ValueError:
+            tmp['roc'] = 0
+
+        npos += class_npos
+        accuracies.append(tmp['accuracy'])
+        precisions.append(tmp['precision'])
+        recalls.append(tmp['recall'])
+        f1s.append(tmp['f1'])            
+        rocs.append(tmp['roc'])
+
+        scores[categories[i]] = tmp
+
+    scores['all'] = {}
+    scores['all']['npos']      = npos
+    scores['all']['accuracy']  = np.mean(accuracies)
+    scores['all']['precision'] = np.mean(precisions)
+    scores['all']['recall']    = np.mean(recalls)
+    scores['all']['f1']        = np.mean(f1s)
+    scores['all']['roc']   = np.mean(rocs)
     
     return scores
 
@@ -309,7 +318,7 @@ if __name__ == '__main__':
     summary_op = tf.summary.merge_all()
 
     #writer              = tf.summary.FileWriter('logs', graph=tf.get_default_graph())    
-    #saver               = tf.train.Saver()    
+    saver               = tf.train.Saver()    
     init_op_global      = tf.global_variables_initializer()
     init_op_local       = tf.local_variables_initializer()
     batchCount          = 0
@@ -324,6 +333,8 @@ if __name__ == '__main__':
             print("Reading training data...")
             data = pd.read_csv(FLAGS.trainfile)
             train_data, val_data = splitData(data, PARAMS)
+            print('Training samples {}..'.format(len(train_data)))
+            print('Validation samples {}..'.format(len(val_data)))
 
             for epoch in range(sum(PARAMS['numEpochs'])):            
                 print("Epoch " + str(epoch))
@@ -357,7 +368,7 @@ if __name__ == '__main__':
 
             if FLAGS.checkpoint:
                 chkpFullName = os.path.join(FLAGS.checkpointDir, FLAGS.checkpointName)
-                #save_path    = saver.save(sess, chkpFullName)
+                save_path    = saver.save(sess, chkpFullName)
             
             if not val_data.empty:
                 print("Starting validation....")
@@ -365,6 +376,7 @@ if __name__ == '__main__':
                 valTimeStart = timer()            
                 timeStart    = valTimeStart
                 val_probits  = []
+                val_labels   = []
                 for batch in inputGenerator(val_data, vocabScores, t2id, PARAMS):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_ids:  batch['tokenids'],
@@ -374,7 +386,8 @@ if __name__ == '__main__':
 
                     batch_probits, batch_preds, batch_accuracy = sess.run([probits, predictions, accuracy], feed_dict=feed_dict)
                     val_probits.append(batch_probits)
-
+                    val_labels.append(batch['labels'])
+                    
                     batchCount += 1            
                     if batchCount % batchReportInterval == 0:
                         timeEnd = timer()
@@ -383,16 +396,24 @@ if __name__ == '__main__':
                         timeStart = timer()
 
                 valTimeEnd  = timer()
-                val_probits = np.vstack(val_probits)
-                val_labels  = val_data.iloc[:, 2:].as_matrix()
-                scores      = score_predictions(val_labels, val_probits)            
                 print("Validation Total Time {:.2f}m".format((valTimeEnd-valTimeStart)/60))
-                print('    Accuracy: {:.2f}'.format(scores['accuracy']))
-                print('   Precision: {:.2f}'.format(scores['precision']))
-                print('      Recall: {:.2f}'.format(scores['recall']))
-                print('          F1: {:.2f}'.format(scores['f1']))
-                print('     ROC AUC: {:.2f}'.format(scores['roc_auc']))
 
+
+                val_probits = np.vstack(val_probits)
+                val_labels  = np.vstack(val_labels) #val_data.iloc[:, 2:].as_matrix()
+                scores      = score_predictions(categories, val_labels, val_probits, PARAMS)
+
+                cols        = ['npos','accuracy','precision','recall','f1','roc']
+                headers     = '{:^13}' + ''.join(['{:^10}'] * len(cols))
+                print(headers.format('',*cols))
+                rows        = categories +  ['all']
+                rowfmt      = '{:^13}'+ ''.join(['{:^10.2f}'] * len(cols))
+                for i in range(len(rows)):
+                    cn = rows[i]
+                    cs = scores[cn]
+                    cv = [cn] + [cs[x] for x in cols]
+                    print(rowfmt.format(*cv))
+                    
 
         if FLAGS.doTest:
 
@@ -402,7 +423,7 @@ if __name__ == '__main__':
                 if not isfile(chkpFullName):
                     print("Error, checkpoint file doesnt exist {}")
                     sys.exit(1)
-                #saver.restore(sess,chkpFullName)
+                saver.restore(sess,chkpFullName)
             
 
             print('Loading test data....')
