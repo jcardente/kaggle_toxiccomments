@@ -23,12 +23,14 @@ from gensim.models.fasttext import FastText
 FLAGS = None
 
 PARAMS = {
-    'learningRates': [0.01,0.001,0.0001],    
-    'numEpochs' : [10,5,2],
-    'batchSize': 256,
+    'learningRates': [0.001,0.0001],    
+    'numEpochs' : [1,1],
+    'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
     'maxwords': 50,
+    'vocabsize': 1000,
+    'nonetoken': '--NONE--',
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 }
 
@@ -55,30 +57,32 @@ def splitData(df, PARAMS):
     return train_data, val_data
 
 
-def text2vecs(text, embeddings, maxwords):
+def text2ids(text, vocabScores, t2id, maxwords):
     tokens = text.split(' ')
-    tokens = [t for t in tokens if t in embeddings]
-    tokens = tokens[0:maxwords]
-    vecs   = [embeddings[t] for t in tokens]
-    nvecs  = len(vecs)
+    tokens = [(t, vocabScores[t]) for t in tokens if t in vocabScores]
+    tokens.sort(key=lambda x: x[1], reverse=True)
+    tokens  = tokens[0:maxwords]
+    tokens  = [t2id[t[0]] for t in tokens]  
+    ntokens = len(tokens)
 
-    if nvecs == 0:
+    if ntokens == 0:
         # NB - this happens when the comment contains
         #      non-english text using different character
         #      sets (eg Arabic). For now, we'll just use
         #      the NONE vector
-        vecs = [embeddings['--NONE--']]
-        nvecs = 1
+        tokens  = [t2id[PARAMS['nonetoken']]]
+        ntokens = 1
         
-    vecs = np.vstack(vecs)        
-    if nvecs < maxwords:
-        topad = maxwords - nvecs
-        vecs  = np.pad(vecs, [[0,topad],[0,0]], 'constant')
+    if ntokens < maxwords:
+        topad = maxwords - ntokens
+        padded = np.ones(maxwords, dtype=np.int) * t2id[PARAMS['nonetoken']]
+        padded[:ntokens]  = tokens
+        tokens = padded
 
-    return nvecs, vecs
+    return ntokens, tokens
 
 
-def inputGenerator(df, embeddings, PARAMS):
+def inputGenerator(df, vocabScores, t2id, PARAMS):
     # NB - df is a pandas dataframe
     columns    = df.columns.tolist()
     epochSize  = len(df.index)
@@ -90,12 +94,11 @@ def inputGenerator(df, embeddings, PARAMS):
         comments  = batchData['comment_text'].tolist()
         
         batch = {}
-        batch['ids']  = batchData['id'].tolist()
+        batch['docids']  = batchData['id'].tolist()
 
-        tmp = [text2vecs(c, embeddings, PARAMS['maxwords']) for c in comments]
-
-        batch['lengths'] = np.array([t[0] for t in tmp])
-        batch['vecs']    = np.stack([t[1] for t in tmp])
+        tmp = [text2ids(c, vocabScores, t2id, PARAMS['maxwords']) for c in comments]
+        batch['lengths']  = np.array([t[0] for t in tmp])
+        batch['tokenids'] = np.stack([t[1] for t in tmp])
         
         if len(columns) > 2:
             batch['labels'] = np.array(batchData.iloc[:,2:])
@@ -152,6 +155,31 @@ def score_predictions(labels, probs):
     return scores
 
 
+def loadChi2Scores(filename):
+    f = open(filename, 'rb')
+    term_scores = pickle.load(f)
+    return term_scores
+    
+def loadEmbeddings(filename):
+    embeddings = FastText.load(FLAGS.embedfile)
+    #dictionary = {w:i for i,w in enumerate(list(embeddings.wv.vocab))}
+    return embeddings
+
+def topkChi2Terms(chi2scores, k, includeNone=True):
+    scores = [i for i in chi2scores.items()]
+    scores.sort(key=lambda x: x[1], reverse=True)
+    scores = scores[0:k]
+    if includeNone:
+        scores[1:] = scores[:-1]
+        scores[0]  = (PARAMS['nonetoken'], chi2scores[PARAMS['nonetoken']])
+        
+    return {k:v for k,v in scores}
+
+def indexChi2Terms(chi2scores):
+    t2id = {k:i for i,k in enumerate(chi2scores.keys())}
+    id2t = {i:k for k,i in t2id.items()}
+    return t2id, id2t
+
 
 
 
@@ -173,6 +201,10 @@ if __name__ == '__main__':
                         dest='embedfile',
                         help='FastText embeddings')
     
+    parser.add_argument('-c',type=str,
+                        dest='chi2file',
+                        default='models/chi2scores.pkl')
+
     parser.add_argument('--train',
                         action='store_true',
                         default=False,
@@ -214,36 +246,40 @@ if __name__ == '__main__':
 
     categories = PARAMS['categories'] 
 
-    # Load word embeddings
-    embeddings = FastText.load(FLAGS.embedfile)
-    dictionary = {w:i for i,w in enumerate(list(embeddings.wv.vocab))}
+    # Load word embeddings and chi2 scores
+    embeddings = loadEmbeddings(FLAGS.embedfile)
+    chi2scores = loadChi2Scores(FLAGS.chi2file)
+    
 
-
+    # Pick the best terms to use and then get the embeddings for
+    # them
+    vocabScores     = topkChi2Terms(chi2scores, PARAMS['vocabsize'])
+    t2id,id2t       = indexChi2Terms(vocabScores)
+    vocabEmbeddings = np.stack([embeddings[id2t[i]] for i in range(len(t2id))])
+    
     # DEFINE THE GRAPH
     tf.reset_default_graph()
     isTraining    = tf.placeholder(tf.bool, name='istraining')
-    input_vecs    = tf.placeholder(tf.float32, shape=[None, PARAMS['maxwords'], embeddings.vector_size], name='input_vecs')
+    input_ids     = tf.placeholder(tf.int32, shape=[None, PARAMS['maxwords']], name='input_ids')
     input_lengths = tf.placeholder(tf.int32, shape=[None], name='input_lengths')
     input_labels  = tf.placeholder(tf.int32, shape=[None,len(categories)], name='input_labels')        
     learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
     threshold     = tf.constant(PARAMS['threshold'], dtype=tf.float32, name='probit_threshold')
     global_step   = tf.Variable(0, name='global_step',trainable=False)
+    tfembeddings  = tf.Variable(vocabEmbeddings, name='embedding_vectors')
+    
     
     with tf.device("/gpu:0"):
 
-        #used = tf.sign(tf.reduce_max(tf.abs(input_vecs), 2))
-        #length = tf.reduce_sum(used, 1)
-        #length = tf.cast(length, tf.int32)        
-
-        layers    = [128, 128, 128]
+        input_vecs = tf.gather(tfembeddings, input_ids)
+        layers    = [256, 256]
         rnn_cells = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
         stacked_cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
         outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,
                                             inputs=input_vecs,
-                                            dtype=tf.float32)
-        flat_states = tf.concat(states[len(layers)-1], axis=1) 
-
-        dense1 = tf.layers.dense(flat_states, units=1024, activation=tf.nn.relu)
+                                            dtype=tf.float32)        
+        rnn_out = outputs[:,-1,:]        
+        dense1 = tf.layers.dense(rnn_out, units=1024, activation=tf.nn.relu)
         dense2 = tf.layers.dense(dense1, units=1024, activation=tf.nn.relu)        
         logits = tf.layers.dense(dense2, units=len(categories))
 
@@ -269,7 +305,7 @@ if __name__ == '__main__':
     summary_op = tf.summary.merge_all()
 
     #writer              = tf.summary.FileWriter('logs', graph=tf.get_default_graph())    
-    saver               = tf.train.Saver()    
+    #saver               = tf.train.Saver()    
     init_op_global      = tf.global_variables_initializer()
     init_op_local       = tf.local_variables_initializer()
     batchCount          = 0
@@ -296,10 +332,10 @@ if __name__ == '__main__':
                         break
 
                 timeStart = timer()
-                for batch in inputGenerator(train_data, embeddings, PARAMS):
+                for batch in inputGenerator(train_data, vocabScores, t2id, PARAMS):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_lengths: batch['lengths'],
-                                 input_vecs:  batch['vecs'],
+                                 input_ids:  batch['tokenids'],
                                  input_labels: batch['labels'],
                                  isTraining: 1}
 
@@ -317,7 +353,7 @@ if __name__ == '__main__':
 
             if FLAGS.checkpoint:
                 chkpFullName = os.path.join(FLAGS.checkpointDir, FLAGS.checkpointName)
-                save_path    = saver.save(sess, chkpFullName)
+                #save_path    = saver.save(sess, chkpFullName)
             
             if not val_data.empty:
                 print("Starting validation....")
@@ -325,9 +361,9 @@ if __name__ == '__main__':
                 valTimeStart = timer()            
                 timeStart    = valTimeStart
                 val_probits  = []
-                for batch in inputGenerator(val_data, embeddings, PARAMS):
+                for batch in inputGenerator(val_data, vocabScores, t2id, PARAMS):
                     feed_dict = {learning_rate: epochLearningRate,
-                                 input_vecs:  batch['vecs'],
+                                 input_ids:  batch['tokenids'],
                                  input_lengths: batch['lengths'],                                 
                                  input_labels: batch['labels'],
                                  isTraining: 0}
@@ -362,7 +398,7 @@ if __name__ == '__main__':
                 if not isfile(chkpFullName):
                     print("Error, checkpoint file doesnt exist {}")
                     sys.exit(1)
-                saver.restore(sess,chkpFullName)
+                #saver.restore(sess,chkpFullName)
             
 
             print('Loading test data....')
@@ -374,14 +410,14 @@ if __name__ == '__main__':
             timeStart    = infTimeStart
             inf_ids      = []
             inf_probits  = []
-            for batch in inputGenerator(test_data, embeddings, PARAMS):
+            for batch in inputGenerator(test_data, vocabScores, t2id, PARAMS):
                 feed_dict = {learning_rate: epochLearningRate,
-                             input_vecs:  batch['vecs'],
+                             input_vecs:  batch['tokenids'],
                              input_lengths: batch['lengths'],                             
                              isTraining: 0}
 
                 batch_probits = sess.run(probits, feed_dict=feed_dict)
-                inf_ids.extend(batch['ids'])
+                inf_ids.extend(batch['docids'])
                 inf_probits.append(batch_probits)
 
                 batchCount += 1            
