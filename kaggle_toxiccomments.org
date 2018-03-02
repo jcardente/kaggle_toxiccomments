@@ -14,6 +14,15 @@ References
 - https://www.kaggle.com/jhoward/nb-svm-strong-linear-baseline
 - https://stackoverflow.com/questions/41789133/what-are-c-state-and-m-state-in-tensorflow-lstm
 
+* Run Log
+** <2018-03-01 Thu>
+
+#+BEGIN_EXAMPLE
+
+python src/rnn.py -t data/derived/train_50-0.csv -e models/embeddings -c models/chi2scores.pkl --train --val 5 --checkpoint --checkdir checkpoints/2018.03.01_20.30 --checkname rnn.ckpt
+
+#+END_EXAMPLE
+
 * Notes
 ** <2018-02-07 Wed> Initial look at the data
 
