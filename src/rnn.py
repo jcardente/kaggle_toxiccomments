@@ -177,11 +177,12 @@ def loadChi2Scores(filename):
     f = open(filename, 'rb')
     term_scores = pickle.load(f)
     return term_scores
-    
+
+
 def loadEmbeddings(filename):
     embeddings = FastText.load(FLAGS.embedfile)
-    #dictionary = {w:i for i,w in enumerate(list(embeddings.wv.vocab))}
     return embeddings
+
 
 def topkChi2Terms(chi2scores, k, includeNone=True):
     scores = [i for i in chi2scores.items()]
@@ -296,7 +297,7 @@ if __name__ == '__main__':
         outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,
                                             inputs=input_vecs,
                                             dtype=tf.float32)        
-        #rnn_out = outputs[:,-1,:]
+
         batch_range = tf.range(tf.shape(input_ids)[0])
         batch_outs  = tf.stack([batch_range, input_lengths], axis=1)
         rnn_out     = tf.gather_nd(outputs, batch_outs)
