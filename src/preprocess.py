@@ -1,39 +1,19 @@
 # ------------------------------------------------------------
 # preprocess.py
 #
-# Utility to lemmatize and detect phrases in comment text.
-# Saves result to a new csv file.
+# Utility to lemmatize comment text and saves result to a new csv
+# file. Only keeps lemmas that have a spaCy embedding vector.
 #
 # J. Cardente
 # 2018
 # ------------------------------------------------------------
 
 import argparse
-import numpy as np
 import pandas as pd
 import spacy
-
-from gensim.models.phrases import Phrases, Phraser
+from   util import lematize_comments, load_nlp
 
 FLAGS = None
-
- 
-def keep_token(t):
-    return not (t.is_space or t.is_punct or 
-                 t.is_stop or t.like_num)
-
-def lematize_comment(comment):
-    return [ t.lemma_ for t in comment if keep_token(t)]
-            
-
-def lematize_comments(comments, nlp, nthreads=4):
-    docs = []
-    for c in nlp.pipe(comments, batch_size=100, n_threads=nthreads):
-        lc = lematize_comment(c)
-        if len(lc) == 0:
-            lc =['--NONE--']
-        docs.append(lc)
-    return docs
 
 
 if  __name__ == '__main__':
@@ -62,11 +42,10 @@ if  __name__ == '__main__':
     comments_text = data['comment_text']
 
     print('Lemmatizing...')
-    nlp = spacy.load('en', disable=['ner'])
+    nlp  = load_nlp()
     docs = lematize_comments(comments_text, nlp, nthreads=FLAGS.nthreads)
 
-    bigram_transformer = Phraser(Phrases(docs))
-    new_comments = [' '.join(d) for d in bigram_transformer[docs]]
+    new_comments = [' '.join(d) for d in docs]
     data['comment_text'] = new_comments
 
     print('Saving results...')    
