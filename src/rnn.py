@@ -20,14 +20,13 @@ import tensorflow as tf
 import sklearn.metrics as metrics
 import time
 from timeit import default_timer as timer
-
 from gensim.models.fasttext import FastText
 
 FLAGS = None
 
 PARAMS = {
     'learningRates': [0.001,0.0001],    
-    'numEpochs' : [10,5],
+    'numEpochs' : [10,10],
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
@@ -88,11 +87,12 @@ def text2ids(text, vocabScores, t2id, maxwords):
     return ntokens, tokens
 
 
-def inputGenerator(df, vocabScores, t2id, PARAMS):
+def inputGenerator(df, vocabScores, t2id, PARAMS, randomize=False):
     # NB - df is a pandas dataframe
     columns    = df.columns.tolist()
     rowidxs    = np.arange(df.shape[0])
-    np.random.shuffle(rowidxs)
+    if randomize:
+        np.random.shuffle(rowidxs)
     epochSize  = len(df.index)
     batchStart = 0
     batchSize  = PARAMS['batchSize'] 
@@ -193,6 +193,7 @@ def topkChi2Terms(chi2scores, k, includeNone=True):
         scores[0]  = (PARAMS['nonetoken'], chi2scores[PARAMS['nonetoken']])
         
     return {k:v for k,v in scores}
+
 
 def indexChi2Terms(chi2scores):
     t2id = {k:i for i,k in enumerate(chi2scores.keys())}
@@ -357,7 +358,7 @@ if __name__ == '__main__':
                         break
 
                 timeStart = timer()
-                for batch in inputGenerator(train_data, vocabScores, t2id, PARAMS):
+                for batch in inputGenerator(train_data, vocabScores, t2id, PARAMS, randomize=True):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_lengths: batch['lengths'],
                                  input_ids:  batch['tokenids'],
@@ -387,7 +388,7 @@ if __name__ == '__main__':
                 timeStart    = valTimeStart
                 val_probits  = []
                 val_labels   = []
-                for batch in inputGenerator(val_data, vocabScores, t2id, PARAMS):
+                for batch in inputGenerator(val_data, vocabScores, t2id, PARAMS, randomize=False):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_ids:  batch['tokenids'],
                                  input_lengths: batch['lengths'],                                 
@@ -446,7 +447,7 @@ if __name__ == '__main__':
             timeStart    = infTimeStart
             inf_ids      = []
             inf_probits  = []
-            for batch in inputGenerator(test_data, vocabScores, t2id, PARAMS):
+            for batch in inputGenerator(test_data, vocabScores, t2id, PARAMS, randomize=False):
                 feed_dict = {learning_rate: epochLearningRate,
                              input_ids:  batch['tokenids'],
                              input_lengths: batch['lengths'],                             
