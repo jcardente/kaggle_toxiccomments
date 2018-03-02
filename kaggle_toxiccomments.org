@@ -13,6 +13,7 @@ References
 - https://www.oreilly.com/learning/perform-sentiment-analysis-with-lstms-using-tensorflow
 - https://www.kaggle.com/jhoward/nb-svm-strong-linear-baseline
 - https://stackoverflow.com/questions/41789133/what-are-c-state-and-m-state-in-tensorflow-lstm
+- https://www.kaggle.com/konradb/adversarial-validation
 
 * Run Log
 ** <2018-03-01 Thu>
@@ -698,3 +699,134 @@ Reading data...
 Learning embeddings...
 Saving model...
 #+END_EXAMPLE
+** <2018-03-02 Fri> Rethinking loss and class imbalance
+
+Models are not achieving good scores. Two initial thoughts are:
+- Wrong loss function
+- Severe class imbalance (eg need boosting)
+
+Doing another pass at exploration
+
+#+BEGIN_SRC python
+import pandas as pd
+
+
+data = pd.read_csv('data/derived/train_processed.csv')
+label_cols =  data.columns.tolist()[2:]
+comments_text = data['comment_text']
+
+tmp = data[label_cols]
+
+label_sigs = data[label_cols].apply(lambda x: ''.join([str(l) for l in x[label_cols]]), axis=1)
+
+from collections import Counter
+
+label_sig_counts = Counter(label_sigs)
+
+#+END_SRC
+
+
+#+BEGIN_EXAMPLE
+Counter({'000000': 143346,
+         '000001': 54,
+         '000010': 301,
+         '000011': 28,
+         '000100': 22,
+         '000110': 3,
+         '001000': 317,
+         '001001': 3,
+         '001010': 181,
+         '001011': 18,
+         '001100': 2,
+         '001110': 2,
+         '100000': 5666,
+         '100001': 136,
+         '100010': 1215,
+         '100011': 134,
+         '100100': 113,
+         '100101': 7,
+         '100110': 16,
+         '100111': 3,
+         '101000': 1758,
+         '101001': 35,
+         '101010': 3800,
+         '101011': 618,
+         '101100': 11,
+         '101110': 131,
+         '101111': 56,
+         '110000': 41,
+         '110001': 3,
+         '110010': 14,
+         '110011': 7,
+         '110100': 11,
+         '110101': 1,
+         '110110': 1,
+         '111000': 158,
+         '111001': 6,
+         '111010': 989,
+         '111011': 265,
+         '111100': 4,
+         '111110': 64,
+         '111111': 31})
+#+END_EXAMPLE
+
+
+#+BEGIN_SRC python
+from sklearn.cluster import AgglomerativeClustering
+
+label_vals = data[label_cols].as_matrix()
+
+agg_model = AgglomerativeClustering(n_clusters=2)
+clusts    = agg_model.fit_predict(label_vals.T)
+
+
+from scipy.cluster.hierarchy import dendrogram, linkage
+Z = linkage(label_vals.T)
+
+fig, ax = plt.subplots()
+dendrogram(Z)
+fig.canvas.draw()
+ax.set_xticklabels(label_cols)
+plt.show()
+
+#+END_SRC
+
+
+
+
+#+BEGIN_SRC python
+import spacy
+
+def keep_token(t):
+    return t.has_vector and not (t.is_space or t.is_punct or 
+                 t.is_stop or t.like_num)
+
+def lematize_comment(comment):
+    return [ t.lemma_ for t in comment if keep_token(t)]
+            
+
+def lematize_comments(comments, nlp, nthreads=4):
+    docs = []
+    for c in nlp.pipe(comments, batch_size=100, n_threads=nthreads):
+        lc = lematize_comment(c)
+        if len(lc) == 0:
+            lc =['--NONE--']
+        docs.append(lc)
+    return docs
+
+
+nlp = spacy.load('en_core_web_md', disable=['parser'])
+
+docs = lematize_comments(comments_text, nlp, 4)
+
+bigram_transformer = Phraser(Phrases(docs))
+new_comments = [' '.join(d) for d in bigram_transformer[docs]]
+
+
+
+
+
+
+#+END_SRC
+
+
