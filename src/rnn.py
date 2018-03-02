@@ -59,13 +59,13 @@ def splitData(df, PARAMS):
 
 def text2ids(text, vocabScores, t2id, maxwords):
     tokens = text.split(' ')
-    scores = [(t, vocabScores[t]) for t in tokens if t in vocabScores]
+    scores = [(i, vocabScores[t]) for i,t in enumerate(tokens) if t in vocabScores]
     scores.sort(key=lambda x: x[1], reverse=True)
 
     # NB - preserve order of words in text
-    keep    = scores[0:maxwords]
-    keep    = set([t[0] for t in keep])
-    tokens  = [t2id[t] for t in tokens if t in keep] 
+    keep    = [i for i,_ in scores[0:maxwords]]
+    keep.sort()
+    tokens  = [t2id[tokens[i]] for i in keep]
     ntokens = len(tokens)
 
     if ntokens == 0:
