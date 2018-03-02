@@ -444,7 +444,7 @@ if __name__ == '__main__':
             inf_probits  = []
             for batch in inputGenerator(test_data, vocabScores, t2id, PARAMS):
                 feed_dict = {learning_rate: epochLearningRate,
-                             input_vecs:  batch['tokenids'],
+                             input_ids:  batch['tokenids'],
                              input_lengths: batch['lengths'],                             
                              isTraining: 0}
 
