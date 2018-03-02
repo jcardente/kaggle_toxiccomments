@@ -8,6 +8,9 @@
 # 2018
 # ------------------------------------------------------------
 
+import os
+from os.path import join, isfile, isdir
+import sys
 import argparse
 import numpy as np
 import pandas as pd
@@ -422,9 +425,10 @@ if __name__ == '__main__':
 
             if not FLAGS.doTrain:
                 chkpFullName = os.path.join(FLAGS.checkpointDir, FLAGS.checkpointName)
-                print('Restoring model {}'.format(chkpFullName))            
-                if not isfile(chkpFullName):
-                    print("Error, checkpoint file doesnt exist {}")
+                metaFile     = chkpFullName + '.meta'                                
+                print('Restoring model {}'.format(chkpFullName))
+                if not isfile(metaFile):
+                    print("Error, checkpoint file doesnt exist")
                     sys.exit(1)
                 saver.restore(sess,chkpFullName)
             
