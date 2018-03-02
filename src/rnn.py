@@ -91,11 +91,14 @@ def text2ids(text, vocabScores, t2id, maxwords):
 def inputGenerator(df, vocabScores, t2id, PARAMS):
     # NB - df is a pandas dataframe
     columns    = df.columns.tolist()
+    rowidxs    = np.arange(df.shape[0])
+    np.random.shuffle(rowidxs)
     epochSize  = len(df.index)
     batchStart = 0
     batchSize  = PARAMS['batchSize'] 
     while batchStart < epochSize:
-        batchData = df.iloc[batchStart:(batchStart+batchSize),:]
+        batchIdxs = rowidxs[batchStart:(batchStart+batchSize)]
+        batchData = df.iloc[batchIdxs,:]
         ids       = batchData['id'].tolist()
         comments  = batchData['comment_text'].tolist()
         
