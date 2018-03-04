@@ -31,8 +31,7 @@ PARAMS = {
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
-    'maxwords': 50,
-    'vocabsize': 5000,
+    'maxwords': 100,
     'nonetoken': '--EMPTY--',
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 }
@@ -290,16 +289,26 @@ if __name__ == '__main__':
         tfembeddings  = tf.Variable(input_embeddings, trainable=False, name='embedding_vectors')
         input_vecs    = tf.gather(tfembeddings, input_ids)
         
-        layers        = [256, 256]
+        layers       = [80, 80]
         rnn_cells    = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
-        stacked_cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
-        outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,
-                                            inputs=input_vecs,
-                                            dtype=tf.float32)        
+        #stacked_cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
+        # outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,
+        #                                     inputs=input_vecs,
+        #                                     dtype=tf.float32)        
+        # batch_range = tf.range(tf.shape(input_ids)[0])
+        # batch_outs  = tf.stack([batch_range, input_lengths], axis=1)
+        # rnn_out     = tf.gather_nd(outputs, batch_outs)
 
+        fw_cells = tf.contrib.rnn.MultiRNNCell(rnn_cells)
+        bw_cells = tf.contrib.rnn.MultiRNNCell(rnn_cells)        
+        outputs, states = tf.nn.bidirectional_dynamic_rnn(fw_cells, bw_cells, input_vecs, dtype=tf.float32)        
+        
         batch_range = tf.range(tf.shape(input_ids)[0])
         batch_outs  = tf.stack([batch_range, input_lengths], axis=1)
-        rnn_out     = tf.gather_nd(outputs, batch_outs)
+
+        fw_out     = tf.gather_nd(outputs[0], batch_outs)
+        bw_out     = tf.gather_nd(outputs[1], batch_outs)        
+        rnn_out    = tf.concat([fw_out, bw_out], 1)
         
         dense1 = tf.layers.dense(rnn_out, units=1024, activation=tf.nn.relu)
         dense2 = tf.layers.dense(dense1, units=1024, activation=tf.nn.relu)        
@@ -307,7 +316,6 @@ if __name__ == '__main__':
 
         loss   = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
                                                          labels=tf.cast(input_labels,dtype=tf.float32))
-        loss   = tf.reduce_mean(loss, axis=0)
         loss   = tf.reduce_sum(loss, name="loss")
         optimizer = tf.train.AdamOptimizer(learning_rate = learning_rate)
         
