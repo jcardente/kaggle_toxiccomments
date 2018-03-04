@@ -28,7 +28,7 @@ FLAGS = None
 
 PARAMS = {
     'learningRates': [0.001,0.0001],    
-    'numEpochs' : [1,1],
+    'numEpochs' : [10,1],
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
@@ -291,7 +291,7 @@ if __name__ == '__main__':
         # NB - put embeddings on GPU!
         tfembeddings = tf.Variable(input_embeddings, trainable=False, name='embedding_vectors')
         input_vecs   = tf.gather(tfembeddings, input_ids)
-        logits       = models.stacked_bidir_lstm(input_vecs, input_lengths, PARAMS)
+        logits       = models.bidir_gru(input_vecs, input_lengths, isTraining, PARAMS)
         
         loss   = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
                                                          labels=tf.cast(input_labels,dtype=tf.float32))
