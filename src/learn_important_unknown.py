@@ -37,14 +37,8 @@ if __name__ == '__main__':
                         required=True,
                         dest='embedfile',
                         help='Embedding file')
-    
-    parser.add_argument('-n',type=int,
-                        default=4,
-                        dest='nthreads',
-                        help='Number of threads')
-    
+        
     FLAGS, unparsed = parser.parse_known_args()
-
 
     print('Reading data...')
     train_data = load_data(FLAGS.trainfile)
@@ -80,11 +74,12 @@ if __name__ == '__main__':
             unknowns[i] += model_fdr.scores_[i]
 
     print('Saving results...')
-    unknowns_ranked = [(i, s) for i,s in unknowns.items()]
-    unknowns_ranked.sort(key=lambda x: x[1], reverse=True)
+    unknowns_ranked = [(i, s, comments_dictionary.dfs[i]) for i,s in unknowns.items()]
+    unknowns_ranked.sort(key=lambda x: x[2], reverse=True)
     unknowns_dict = {
-        'scores': [s for i,s in unknowns_ranked],
-        'tokens': [comments_dictionary[i] for i,s in unknowns_ranked]
+        'scores': [s for i,s,c in unknowns_ranked],
+        'ndocs' : [c for i,s,c in unknowns_ranked],
+        'tokens': [comments_dictionary[i] for i,s,c in unknowns_ranked]
         }
     
     df = pd.DataFrame(unknowns_dict)
