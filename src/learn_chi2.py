@@ -14,8 +14,10 @@ import pickle
 from gensim.corpora import Dictionary
 from gensim.models.tfidfmodel import TfidfModel
 from gensim.matutils import corpus2csc
-from sklearn.feature_selection import chi2
- 
+from sklearn.feature_selection import chi2, SelectFdr
+from util import load_data, load_embedding
+from collections import Counter
+
 FLAGS = None
 
 
@@ -27,6 +29,12 @@ if __name__ == '__main__':
                         dest='trainfile',
                         help='Training file')
 
+    parser.add_argument('-e',type=str,
+                        required=True,
+                        dest='embedfile',
+                        help='Embedding file')
+    
+    
     parser.add_argument('-c',type=str,
                         dest='chi2file',
                         default='models/chi2scores.pkl')
@@ -34,14 +42,16 @@ if __name__ == '__main__':
     FLAGS, unparsed = parser.parse_known_args()
 
     print('Reading data...')
-    data = pd.read_csv(FLAGS.trainfile)
-
-    labelColnames =  data.columns.tolist()[2:]        
-    labels   = data[labelColnames].apply(lambda x: int(any(x)), axis=1)
-        
+    data = load_data(FLAGS.trainfile)
     comments_text = data['comment_text']
-    docs = [c.split(' ') for c in comments_text]
+    comments_text = comments_text.tolist()
 
+    print('Finding tokens with embeddings...')
+    ft_model = load_embedding(FLAGS.embedfile)
+    docs = [c.split(' ') for c in comments_text]
+    for i in range(len(docs)):
+        docs[i] = [t for t in docs[i] if t in ft_model.vocab]
+        
     print('Building dictionary...')
     comments_dictionary = Dictionary(docs)
     comments_corpus     = [comments_dictionary.doc2bow(d) for d in docs]
@@ -53,11 +63,19 @@ if __name__ == '__main__':
     comments_tfidf  = model_tfidf[comments_corpus]
     comments_vecs   = corpus2csc(comments_tfidf).T
 
-    print('Calculating Chi2 scores...')
-    chivals, pvals = chi2(comments_vecs, labels)
-    term_scores    = {t:chivals[i] for i,t in comments_dictionary.iteritems()}
+    print('Finding important terms...')
+    labelcols = data.columns.tolist()[2:]
+    terms = Counter()
+    for l in labelcols:
+        cl = data[l]
+        model_fdr = SelectFdr(chi2, alpha=0.025)
+        model_fdr.fit(comments_vecs, cl)
+        ids = model_fdr.get_support(indices=True)
+        for i in ids:
+            terms[i] += model_fdr.scores_[i]
 
-    print('Saving chi2 scores...')
+    print('Saving results...')
     with open(FLAGS.chi2file, 'wb') as f:
-        pickle.dump(term_scores, f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(terms, f, protocol=pickle.HIGHEST_PROTOCOL)
+    
             
