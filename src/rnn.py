@@ -20,19 +20,20 @@ import tensorflow as tf
 import sklearn.metrics as metrics
 import time
 from timeit import default_timer as timer
-from gensim.models.fasttext import FastText
+#from gensim.models.fasttext import FastText
+from util import load_data, load_embedding, load_chi2
 
 FLAGS = None
 
 PARAMS = {
     'learningRates': [0.001,0.0001],    
-    'numEpochs' : [10,10],
+    'numEpochs' : [1,1],
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
     'maxwords': 50,
     'vocabsize': 5000,
-    'nonetoken': '--NONE--',
+    'nonetoken': '--EMPTY--',
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 }
 
@@ -59,35 +60,36 @@ def splitData(df, PARAMS):
     return train_data, val_data
 
 
-def text2ids(text, vocabScores, t2id, maxwords):
+def text2ids(text, vocab_scores, t2id, maxwords):
     tokens = text.split(' ')
-    scores = [(i, vocabScores[t]) for i,t in enumerate(tokens) if t in vocabScores]
+    tokens = [t for t in tokens if t in t2id]
+    scores = [(i, vocab_scores[t]) if t in vocab_scores else (i,0) for i,t in enumerate(tokens)]
     scores.sort(key=lambda x: x[1], reverse=True)
 
     # NB - preserve order of words in text
     keep    = [i for i,_ in scores[0:maxwords]]
     keep.sort()
-    tokens  = [t2id[tokens[i]] for i in keep]
-    ntokens = len(tokens)
+    token_ids = [t2id[tokens[i]] for i in keep]
+    ntokens   = len(token_ids)
 
     if ntokens == 0:
         # NB - this happens when the comment contains
         #      non-english text using different character
         #      sets (eg Arabic). For now, we'll just use
         #      the NONE vector
-        tokens  = [t2id[PARAMS['nonetoken']]]
-        ntokens = 1
+        token_ids  = [t2id[PARAMS['nonetoken']]]
+        ntokens    = 1
         
     if ntokens < maxwords:
         topad = maxwords - ntokens
         padded = np.ones(maxwords, dtype=np.int) * t2id[PARAMS['nonetoken']]
-        padded[:ntokens]  = tokens
-        tokens = padded
+        padded[:ntokens]  = token_ids
+        token_ids = padded
 
-    return ntokens, tokens
+    return ntokens, token_ids
 
 
-def inputGenerator(df, vocabScores, t2id, PARAMS, randomize=False):
+def inputGenerator(df, vocab_scores, t2id, PARAMS, randomize=False):
     # NB - df is a pandas dataframe
     columns    = df.columns.tolist()
     rowidxs    = np.arange(df.shape[0])
@@ -105,7 +107,7 @@ def inputGenerator(df, vocabScores, t2id, PARAMS, randomize=False):
         batch = {}
         batch['docids']  = batchData['id'].tolist()
 
-        tmp = [text2ids(c, vocabScores, t2id, PARAMS['maxwords']) for c in comments]
+        tmp = [text2ids(c, vocab_scores, t2id, PARAMS['maxwords']) for c in comments]
         batch['lengths']  = np.array([t[0] for t in tmp])
         batch['tokenids'] = np.stack([t[1] for t in tmp])
         
@@ -173,33 +175,20 @@ def score_predictions(categories, labels, probs, PARAMS):
     return scores
 
 
-def loadChi2Scores(filename):
-    f = open(filename, 'rb')
-    term_scores = pickle.load(f)
-    return term_scores
+# def topkChi2Terms(chi2scores, k, includeNone=True):
+#     scores = [i for i in chi2scores.items()]
+#     scores.sort(key=lambda x: x[1], reverse=True)
+#     scores = scores[0:k]
+#     if includeNone:
+#         scores[1:] = scores[:-1]
+#         scores[0]  = (PARAMS['nonetoken'], chi2scores[PARAMS['nonetoken']])
+#        
+#     return {k:v for k,v in scores}
 
-
-def loadEmbeddings(filename):
-    embeddings = FastText.load(FLAGS.embedfile)
-    return embeddings
-
-
-def topkChi2Terms(chi2scores, k, includeNone=True):
-    scores = [i for i in chi2scores.items()]
-    scores.sort(key=lambda x: x[1], reverse=True)
-    scores = scores[0:k]
-    if includeNone:
-        scores[1:] = scores[:-1]
-        scores[0]  = (PARAMS['nonetoken'], chi2scores[PARAMS['nonetoken']])
-        
-    return {k:v for k,v in scores}
-
-
-def indexChi2Terms(chi2scores):
-    t2id = {k:i for i,k in enumerate(chi2scores.keys())}
-    id2t = {i:k for k,i in t2id.items()}
-    return t2id, id2t
-
+# def indexChi2Terms(chi2scores):
+#     t2id = {k:i for i,k in enumerate(chi2scores.keys())}
+#     id2t = {i:k for k,i in t2id.items()}
+#     return t2id, id2t
 
 
 
@@ -217,7 +206,7 @@ if __name__ == '__main__':
                         help='Test data file')
 
     parser.add_argument('-e',type=str,
-                        default='models/embeddings.dat',
+                        default='data/ftvecs.pkl',
                         dest='embedfile',
                         help='FastText embeddings')
     
@@ -267,33 +256,42 @@ if __name__ == '__main__':
     categories = PARAMS['categories'] 
 
     # Load word embeddings and chi2 scores
-    embeddings = loadEmbeddings(FLAGS.embedfile)
-    chi2scores = loadChi2Scores(FLAGS.chi2file)
-    chi2scores = {k:v for k,v in chi2scores.items() if k in embeddings}
+    embeddings   = load_embedding(FLAGS.embedfile)
+    chi2scores   = load_chi2(FLAGS.chi2file)
+    vocab_scores = {k:v for k,v in chi2scores.items() if k in embeddings.vocab}
 
     # Pick the best terms to use and then get the embeddings for
     # them
-    vocabScores     = topkChi2Terms(chi2scores, PARAMS['vocabsize'])
-    t2id,id2t       = indexChi2Terms(vocabScores)
-    vocabEmbeddings = np.stack([embeddings[id2t[i]] for i in range(len(t2id))])
+    vocab = [PARAMS['nonetoken']] + [w for w in embeddings.vocab.keys()]
+    t2id  = {w:(i+1) for i,w in enumerate(vocab[1:])}
+    t2id[PARAMS['nonetoken']] = 0
+    embedding_size   = embeddings.get_vector(vocab[1]).shape[0]    
+    vocab_embeddings = np.stack([np.zeros(embedding_size)] + [embeddings.get_vector(w) for w in vocab[1:]])
+    
+    #vocab_scores     = topkChi2Terms(chi2scores, PARAMS['vocabsize'])
+    #t2id,id2t       = indexChi2Terms(vocabScores)
+    #vocabEmbeddings = np.stack([embeddings[id2t[i]] for i in range(len(t2id))])
     
     # DEFINE THE GRAPH
     tf.reset_default_graph()
     isTraining    = tf.placeholder(tf.bool, name='istraining')
     input_ids     = tf.placeholder(tf.int32, shape=[None, PARAMS['maxwords']], name='input_ids')
     input_lengths = tf.placeholder(tf.int32, shape=[None], name='input_lengths')
-    input_labels  = tf.placeholder(tf.int32, shape=[None,len(categories)], name='input_labels')        
+    input_labels  = tf.placeholder(tf.int32, shape=[None,len(categories)], name='input_labels')
+    input_embeddings = tf.placeholder(tf.float32, shape=vocab_embeddings.shape)
+    
     learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
     threshold     = tf.constant(PARAMS['threshold'], dtype=tf.float32, name='probit_threshold')
     global_step   = tf.Variable(0, name='global_step',trainable=False)
-    tfembeddings  = tf.Variable(vocabEmbeddings, name='embedding_vectors')
-    
     
     with tf.device("/gpu:0"):
 
-        input_vecs = tf.gather(tfembeddings, input_ids)
-        layers     = [256, 256]
-        rnn_cells  = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
+        # NB - put embeddings on GPU!
+        tfembeddings  = tf.Variable(input_embeddings, trainable=False, name='embedding_vectors')
+        input_vecs    = tf.gather(tfembeddings, input_ids)
+        
+        layers        = [256, 256]
+        rnn_cells    = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
         stacked_cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
         outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,
                                             inputs=input_vecs,
@@ -337,12 +335,12 @@ if __name__ == '__main__':
     epochLearningRate   = 0.001
     trainTimeStart      = timer()    
     with tf.Session() as sess:
-        sess.run([init_op_global, init_op_local])
+        sess.run([init_op_global, init_op_local], feed_dict={input_embeddings: vocab_embeddings})
 
         if FLAGS.doTrain:
             
             print("Reading training data...")
-            data = pd.read_csv(FLAGS.trainfile)
+            data = load_data(FLAGS.trainfile)
             train_data, val_data = splitData(data, PARAMS)
             print('Training samples {}..'.format(len(train_data)))
             print('Validation samples {}..'.format(len(val_data)))
@@ -358,7 +356,7 @@ if __name__ == '__main__':
                         break
 
                 timeStart = timer()
-                for batch in inputGenerator(train_data, vocabScores, t2id, PARAMS, randomize=True):
+                for batch in inputGenerator(train_data, vocab_scores, t2id, PARAMS, randomize=True):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_lengths: batch['lengths'],
                                  input_ids:  batch['tokenids'],
@@ -388,7 +386,7 @@ if __name__ == '__main__':
                 timeStart    = valTimeStart
                 val_probits  = []
                 val_labels   = []
-                for batch in inputGenerator(val_data, vocabScores, t2id, PARAMS, randomize=False):
+                for batch in inputGenerator(val_data, vocab_scores, t2id, PARAMS, randomize=False):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_ids:  batch['tokenids'],
                                  input_lengths: batch['lengths'],                                 
@@ -447,7 +445,7 @@ if __name__ == '__main__':
             timeStart    = infTimeStart
             inf_ids      = []
             inf_probits  = []
-            for batch in inputGenerator(test_data, vocabScores, t2id, PARAMS, randomize=False):
+            for batch in inputGenerator(test_data, vocab_scores, t2id, PARAMS, randomize=False):
                 feed_dict = {learning_rate: epochLearningRate,
                              input_ids:  batch['tokenids'],
                              input_lengths: batch['lengths'],                             

@@ -9,7 +9,8 @@
 from gensim.models import KeyedVectors
 import pandas as pd
 import spacy
- 
+import pickle
+
 def keep_token(t):
     return not (t.is_space or t.is_punct or 
                 t.is_stop or t.like_num or
@@ -48,3 +49,9 @@ def load_fasttext(fname):
 def load_embedding(fname):
     ft_mode = KeyedVectors.load(fname)
     return ft_mode
+
+
+def load_chi2(fname):
+    f = open(fname, 'rb')
+    term_scores = pickle.load(f)
+    return term_scores
