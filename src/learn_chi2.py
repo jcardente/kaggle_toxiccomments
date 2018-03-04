@@ -72,7 +72,7 @@ if __name__ == '__main__':
         model_fdr.fit(comments_vecs, cl)
         ids = model_fdr.get_support(indices=True)
         for i in ids:
-            terms[i] += model_fdr.scores_[i]
+            terms[comments_dictionary[i]] += model_fdr.scores_[i]
 
     print('Saving results...')
     with open(FLAGS.chi2file, 'wb') as f:
