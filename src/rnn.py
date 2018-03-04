@@ -428,7 +428,7 @@ if __name__ == '__main__':
             
 
             print('Loading test data....')
-            test_data = pd.read_csv(FLAGS.testfile)    
+            test_data = load_data(FLAGS.testfile)    
 
             print("Starting inference....")
             batchCount   = 0
