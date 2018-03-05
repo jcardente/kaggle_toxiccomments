@@ -51,6 +51,14 @@ def load_embedding(fname):
     return ft_mode
 
 
+def load_vocab(fname):
+    vocab = pd.read_csv(fname)
+    t2id = {t:i for t,i in zip(vocab['tokens'],vocab['ids'])}
+    id2t = {i:t for t,i in zip(vocab['tokens'],vocab['ids'])}
+    id2score = {t:s for t,s in zip(vocab['tokens'],vocab['scores']) if s > 0}
+    return vocab, t2id, id2t, id2score
+
+
 def load_chi2(fname):
     f = open(fname, 'rb')
     term_scores = pickle.load(f)
