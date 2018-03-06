@@ -47,42 +47,39 @@ def bidir_gru(input_vecs, input_lengths, isTraining, PARAMS):
                                 noise_shape=[tf.shape(input_vecs)[0], tf.shape(input_vecs)[1], 1],
                                 rate=0.2, training=isTraining)
     outputs, states = tf.nn.bidirectional_dynamic_rnn(fw_cells, bw_cells, drop_in, dtype=tf.float32)        
-
-    #######
-    fw_outputs = outputs[0]
-    bw_outputs = outputs[1]
-    
-    fw_outputs = tf.expand_dims(fw_outputs, axis=0)
-    bw_outputs = tf.expand_dims(bw_outputs, axis=0)    
-
-    fw_avg_pool = tf.nn.max_pool(fw_outputs,
-                                 ksize=[1,1,PARAMS['maxwords'],1],strides=[1,1,1,1],
-                                 padding='SAME')
-    bw_avg_pool = tf.nn.max_pool(bw_outputs,
-                                 ksize=[1,1,PARAMS['maxwords'],1],strides=[1,1,1,1],
-                                 padding='SAME')
-    
-    rnn_out  = tf.squeeze(avg_pool, axis=0)
-
-    #######
-
     
     batch_range = tf.range(tf.shape(input_lengths)[0])
     batch_outs  = tf.stack([batch_range, input_lengths], axis=1)
-
     
     fw_out     = tf.gather_nd(outputs[0], batch_outs)
     bw_out     = tf.gather_nd(outputs[1], batch_outs)        
     rnn_out    = tf.concat([fw_out, bw_out], 1)
-
-    rnn_out  = tf.expand_dims(rnn_out, axis=0)
-    avg_pool = tf.nn.max_pool(rnn_out,
-                              ksize=[1,1,PARAMS['maxwords'],1],strides=[1,1,1,1],
-                              padding='SAME')
-    rnn_out  = tf.squeeze(avg_pool, axis=0)
         
     drop1  = tf.layers.dropout(rnn_out, rate=0.5, training=isTraining)
     dense1 = tf.layers.dense(drop1, units=1024, activation=tf.nn.relu)
     logits = tf.layers.dense(dense1, units=len(PARAMS['categories']))
+
+    return logits
+    
+
+def bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS):
+    fw_cells = tf.contrib.rnn.GRUBlockCellV2(80)    
+    bw_cells = tf.contrib.rnn.GRUBlockCellV2(80)    
+
+    drop_in = tf.layers.dropout(input_vecs,
+                                noise_shape=[tf.shape(input_vecs)[0], tf.shape(input_vecs)[1], 1],
+                                rate=0.2, training=isTraining)
+
+    outputs, states = tf.nn.bidirectional_dynamic_rnn(fw_cells, bw_cells, drop_in, dtype=tf.float32)        
+
+    stacked_outputs =  tf.concat([outputs[0],outputs[1]], 2)
+
+    max_pool = tf.layers.max_pooling1d(stacked_outputs, PARAMS['maxwords'], 1)
+    avg_pool = tf.layers.average_pooling1d(stacked_outputs, PARAMS['maxwords'], 1)
+
+    stacked_pool = tf.concat([max_pool, avg_pool], 2)
+    rnn_out      = tf.squeeze(stacked_pool, 1)
+
+    logits = tf.layers.dense(rnn_out, units=len(PARAMS['categories']), activation=None)
 
     return logits
