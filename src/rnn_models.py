@@ -63,8 +63,8 @@ def bidir_gru(input_vecs, input_lengths, isTraining, PARAMS):
     
 
 def bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS):
-    fw_cells = tf.contrib.rnn.GRUBlockCellV2(80)    
-    bw_cells = tf.contrib.rnn.GRUBlockCellV2(80)    
+    fw_cells = tf.contrib.rnn.GRUBlockCellV2(100)    
+    bw_cells = tf.contrib.rnn.GRUBlockCellV2(100)    
 
     drop_in = tf.layers.dropout(input_vecs,
                                 noise_shape=[tf.shape(input_vecs)[0], tf.shape(input_vecs)[1], 1],
