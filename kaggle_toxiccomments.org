@@ -17,7 +17,10 @@ References
 - https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge/discussion/50913
 - https://www.kaggle.com/yekenot/pooled-gru-fasttext
 
+- https://www.kaggle.com/peterhurford/lgb-gru-lr-lstm-nb-svm-average-ensemble
+- https://github.com/neptune-ml/kaggle-toxic-starter/blob/master/best_configs/fasttext_gru.yaml
 
+  
 * Run Log
 ** <2018-03-01 Thu>
 
@@ -927,3 +930,40 @@ ft_model = KeyedVectors.load_word2vec_format('data/crawl-300d-2M.vec')
 #+END_SRC
 
 
+** <2018-03-06 Tue> Validating max and average pooling
+
+Making sure that max and average 1D pooling work in the exptected way
+
+#+BEGIN_SRC python
+
+import tensorflow as tf
+import numpy as np
+
+seqs  = np.tile(np.arange(5), (5,1)).T
+seq2d = np.repeat(seqs[None,:,:], 4, axis=0)
+
+for i in range(seq2d.shape[0]):
+    idxs = np.arange(seq2d.shape[1])
+    idxs = np.random.permutation(idxs)
+    seq2d[i, :, :] = seq2d[i, idxs,:]
+
+tf.reset_default_graph()
+
+ssp    = tf.placeholder(shape=(None,5,5), dtype=tf.float32)
+pooled = tf.layers.max_pooling1d(ssp, 5, 1)
+
+avgd   = tf.layers.average_pooling1d(ssp, 5, 1)
+
+sess = tf.InteractiveSession()
+sess.run(tf.global_variables_initializer())
+
+o1, o2 = sess.run([pooled, avgd] , feed_dict={ssp: seq2d})
+
+drop_in = tf.layers.dropout(ssp,
+                            noise_shape=[4, 5, 1],
+                            rate=0.5, training=True)
+
+dd = sess.run(drop_in , feed_dict={ssp: seq2d})
+
+
+#+END_SRC
