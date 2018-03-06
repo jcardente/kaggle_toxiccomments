@@ -32,8 +32,8 @@ PARAMS = {
     'validationPercentage': 0,
     'threshold': 0.5,
     'maxwords': 100,
-    'lossReweight': False,
-    'lossBoost': 1,
+    'lossReweight': True,
+    'lossWeightAdjust': 1,
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 }
 
@@ -87,7 +87,7 @@ def text2ids(text, t2id, id2score, maxwords):
     return ntokens, token_ids
 
 
-def inputGenerator(df, id2score, t2id, class_probs, PARAMS, randomize=False):
+def inputGenerator(df, id2score, t2id, class_loss_weights, PARAMS, randomize=False):
     # NB - df is a pandas dataframe
     columns    = df.columns.tolist()
     rowidxs    = np.arange(df.shape[0])
@@ -113,25 +113,24 @@ def inputGenerator(df, id2score, t2id, class_probs, PARAMS, randomize=False):
             labels  = np.array(batchData.iloc[:,2:])
 
             if PARAMS['lossReweight']:
-                probs   = np.tile(class_probs, (len(batchIdxs), 1))
-                weights = labels * (1-probs) * PARAMS['lossBoost'] + (1-labels) * probs
+                weights = np.tile(class_loss_weights, (len(batchIdxs), 1))
+                batch_weights = weights * labels * PARAMS['lossWeightAdjust'] + (1-labels) * np.ones_like(labels) 
             else:
-                weights = np.ones_like(labels)
+                batch_weights = np.ones_like(labels)
             
             batch['labels'] = labels
-            batch['loss_weights'] = weights
-           
-            
+            batch['loss_weights'] = batch_weights
+                       
         batchStart += batchSize            
         yield batch
             
 
-
-def calc_class_probs(df):
+def calc_class_loss_weights(df):
     labelcols = df.columns.tolist()[2:]
     labelvals = df[labelcols].as_matrix()
     probs = np.mean(labelvals, axis=0)
-    return probs
+    log_odds_ratio = np.log((1-probs)/probs)
+    return log_odds_ratio
 
         
 def score_predictions(categories, labels, probs, PARAMS):
@@ -286,7 +285,7 @@ if __name__ == '__main__':
         # NB - put embeddings on GPU!
         tfembeddings = tf.Variable(input_embeddings, trainable=True, name='embedding_vectors')
         input_vecs   = tf.gather(tfembeddings, input_ids)
-        logits       = models.bidir_gru(input_vecs, input_lengths, isTraining, PARAMS)
+        logits       = models.bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS)
         
         loss   = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
                                                          labels=tf.cast(input_labels,dtype=tf.float32))
@@ -324,7 +323,7 @@ if __name__ == '__main__':
             
             print("Reading training data...")
             data = load_data(FLAGS.trainfile)
-            class_probs = calc_class_probs(data)
+            class_loss_weights = calc_class_loss_weights(data)
             
             train_data, val_data = splitData(data, PARAMS)
             print('Training samples {}..'.format(len(train_data)))
@@ -341,7 +340,7 @@ if __name__ == '__main__':
                         break
 
                 timeStart = timer()
-                for batch in inputGenerator(train_data, id2score, t2id, class_probs, PARAMS, randomize=True):
+                for batch in inputGenerator(train_data, id2score, t2id, class_loss_weights, PARAMS, randomize=True):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_lengths: batch['lengths'],
                                  input_ids:  batch['tokenids'],
@@ -372,7 +371,7 @@ if __name__ == '__main__':
                 timeStart    = valTimeStart
                 val_probits  = []
                 val_labels   = []
-                for batch in inputGenerator(val_data, id2score, t2id, class_probs, PARAMS, randomize=False):
+                for batch in inputGenerator(val_data, id2score, t2id, class_loss_weights, PARAMS, randomize=False):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_ids:  batch['tokenids'],
                                  input_lengths: batch['lengths'],                                 
