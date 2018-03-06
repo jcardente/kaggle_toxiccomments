@@ -832,6 +832,30 @@ new_comments = [' '.join(d) for d in bigram_transformer[docs]]
 
 #+END_SRC
 
+** <2018-03-02 Fri> Swears
+
+Need a good way to detect swears with punctuation and fix them
+
+#+BEGIN_SRC python
+import re
+
+maybe_swear = re.compile(r'.*[a-zA-Z][0-9!@#$_%*]+[a-zA-Z]')
+train_data = pd.read_csv(FLAGS.trainfile)
+
+comments_text = train_data['comment_text']
+comments_text.fillna('', inplace=True)
+
+docs = [c.split(' ') for c in comments_text]
+
+maybes = set()
+for d in docs:
+   tmp = [t for t in d if maybe_swear.match(t)]
+   maybes.update(tmp)
+
+from gensim.models import KeyedVectors
+ft_model = KeyedVectors.load_word2vec_format('data/crawl-300d-2M.vec')
+
+#+END_SRC
 
 ** <2018-03-05 Mon> Experimenting with RNN network structures
 
@@ -901,3 +925,5 @@ new_comments = [' '.join(d) for d in bigram_transformer[docs]]
 
 
 #+END_SRC
+
+
