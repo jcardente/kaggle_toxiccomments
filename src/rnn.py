@@ -27,7 +27,7 @@ FLAGS = None
 
 PARAMS = {
     'learningRates': [0.001,0.0001],    
-    'numEpochs' : [5,1],
+    'numEpochs' : [5,5],
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
