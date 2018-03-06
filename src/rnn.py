@@ -386,7 +386,7 @@ if __name__ == '__main__':
                     if batchCount % batchReportInterval == 0:
                         timeEnd = timer()
                         valRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
-                        print("Batch {} Accuracy {} Rate {:.2f}".format(batchCount, batch_accuracy, valRate))
+                        print("Batch {} Accuracy {:.5f} Rate {:.2f}".format(batchCount, batch_accuracy, valRate))
                         timeStart = timer()
 
                 valTimeEnd  = timer()
@@ -401,7 +401,7 @@ if __name__ == '__main__':
                 headers     = '{:^13}' + ''.join(['{:^10}'] * len(cols))
                 print(headers.format('',*cols))
                 rows        = categories +  ['all']
-                rowfmt      = '{:^13}'+ ''.join(['{:^10.2f}'] * len(cols))
+                rowfmt      = '{:^13}'+ ''.join(['{:^10.4f}'] * len(cols))
                 for i in range(len(rows)):
                     cn = rows[i]
                     cs = scores[cn]
