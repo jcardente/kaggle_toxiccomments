@@ -20,18 +20,21 @@ import tensorflow as tf
 import sklearn.metrics as metrics
 import time
 from timeit import default_timer as timer
-from util import load_data, load_embedding, load_vocab
+from util import load_data, load_embedding, load_vocab, get_epoch_val
 import rnn_models as models
 
 FLAGS = None
 
 PARAMS = {
-    'learningRates': [0.001,0.0001],    
     'numEpochs' : [5,5],
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
-    'maxwords': 100,
+    'maxwords': 50,
+    'optLearningRates': [0.001,0.0001],
+    'optBeta1': 0.8,
+    'optBeta2': 0.99,
+    'optEpsilon': 0.001,
     'lossReweight': True,
     'lossWeightAdjust': 1,
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
@@ -257,7 +260,14 @@ if __name__ == '__main__':
     # Load word embeddings and vocab
     embeddings   = load_embedding(FLAGS.embedfile)
     vocab, t2id, id2t, id2score = load_vocab(FLAGS.vocabfile)
-    
+
+    important_embeddings = []
+    for i in range(len(id2t)):
+        token = id2t[i]
+        if i in id2score and id2score[i] > 0.0 and token in embeddings.vocab:
+            important_embeddings.append(embeddings.get_vector(token))
+    unknown_embedding = np.mean(np.vstack(important_embeddings), axis=0)
+            
     vocab_embeddings = np.zeros((len(vocab)+1, embeddings.vector_size))
     for i in range(len(id2t)):
         token = id2t[i]
@@ -266,6 +276,11 @@ if __name__ == '__main__':
             #      are offset by one. This same convention needs
             #      to honored when generating ids for batches.
             vocab_embeddings[i+1,:] = embeddings.get_vector(token)
+        elif i in id2score:
+            # NB - if this term has a score but no embedding
+            #      set it to average of important terms
+            #      instead of zero
+            vocab_embeddings[i+1,:] = unknown_embedding
     
     # DEFINE THE GRAPH
     tf.reset_default_graph()
@@ -285,13 +300,18 @@ if __name__ == '__main__':
         # NB - put embeddings on GPU!
         tfembeddings = tf.Variable(input_embeddings, trainable=True, name='embedding_vectors')
         input_vecs   = tf.gather(tfembeddings, input_ids)
-        logits       = models.bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS)
+        
+        #logits       = models.bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS)
+        logits       = models.stacked_lstm(input_vecs, input_lengths, isTraining, PARAMS)        
         
         loss   = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
                                                          labels=tf.cast(input_labels,dtype=tf.float32))
         loss   = tf.multiply(loss, input_loss_weights)
         loss   = tf.reduce_sum(loss, name="loss")
-        optimizer = tf.train.AdamOptimizer(learning_rate = learning_rate)
+        optimizer = tf.train.AdamOptimizer(learning_rate = learning_rate,
+                                           beta1=PARAMS['optBeta1'],
+                                           beta2=PARAMS['optBeta2'],
+                                           epsilon=PARAMS['optEpsilon'])
         
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
@@ -332,13 +352,7 @@ if __name__ == '__main__':
             for epoch in range(sum(PARAMS['numEpochs'])):            
                 print("Epoch " + str(epoch))
 
-                tmpCount = 0
-                for i in range(len(PARAMS['numEpochs'])):
-                    tmpCount += PARAMS['numEpochs'][i]
-                    if epoch < tmpCount:
-                        epochLearningRate = PARAMS['learningRates'][i]
-                        break
-
+                epochLearningRate = get_epoch_val(PARAMS['optLearningRates'], PARAMS['numEpochs'], epoch)
                 timeStart = timer()
                 for batch in inputGenerator(train_data, id2score, t2id, class_loss_weights, PARAMS, randomize=True):
                     feed_dict = {learning_rate: epochLearningRate,

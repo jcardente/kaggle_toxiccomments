@@ -1,19 +1,43 @@
 import tensorflow as tf
 
-def stacked_unidir_lstm(input_vecs, input_lengths, isTraining, PARAMS):
+def simple_lstm(input_vecs, input_lengths, isTraining, PARAMS):
+
+    drop_in = tf.layers.dropout(input_vecs,
+                                noise_shape=[tf.shape(input_vecs)[0], tf.shape(input_vecs)[1], 1],
+                                rate=0.3, training=isTraining)
+
+    rnn_cells    = tf.contrib.rnn.LSTMCell(num_units=80, use_peepholes=True)    
+    outputs, states = tf.nn.dynamic_rnn(cell=rnn_cells,
+                                        inputs=drop_in,
+                                        dtype=tf.float32)
+    
+    batch_range = tf.range(tf.shape(input_lengths)[0])
+    batch_outs  = tf.stack([batch_range, input_lengths], axis=1)
+    rnn_out     = tf.gather_nd(outputs, batch_outs)
+    
+    logits = tf.layers.dense(rnn_out, units=len(PARAMS['categories']))
+
+    return logits
+
+
+def stacked_lstm(input_vecs, input_lengths, isTraining, PARAMS):
+
+    drop_in = tf.layers.dropout(input_vecs,
+                                noise_shape=[tf.shape(input_vecs)[0], tf.shape(input_vecs)[1], 1],
+                                rate=0.3, training=isTraining)
+    
     layers       = [80, 80]
     rnn_cells    = [tf.contrib.rnn.LSTMCell(num_units=n, use_peepholes=True) for n in layers]
     stacked_cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
     outputs, states = tf.nn.dynamic_rnn(cell=stacked_cell,
-                                        inputs=input_vecs,
-                                        dtype=tf.float32)        
+                                        inputs=drop_in,
+                                        dtype=tf.float32)
+    
     batch_range = tf.range(tf.shape(input_lengths)[0])
     batch_outs  = tf.stack([batch_range, input_lengths], axis=1)
     rnn_out     = tf.gather_nd(outputs, batch_outs)
-
-    dense1 = tf.layers.dense(rnn_out, units=1024, activation=tf.nn.relu)
-    dense2 = tf.layers.dense(dense1, units=1024, activation=tf.nn.relu)        
-    logits = tf.layers.dense(dense2, units=len(PARAMS['categories']))
+    
+    logits = tf.layers.dense(rnn_out, units=len(PARAMS['categories']))
 
     return logits
     
@@ -46,7 +70,8 @@ def bidir_gru(input_vecs, input_lengths, isTraining, PARAMS):
     drop_in = tf.layers.dropout(input_vecs,
                                 noise_shape=[tf.shape(input_vecs)[0], tf.shape(input_vecs)[1], 1],
                                 rate=0.2, training=isTraining)
-    outputs, states = tf.nn.bidirectional_dynamic_rnn(fw_cells, bw_cells, drop_in, dtype=tf.float32)        
+    outputs, states = tf.nn.bidirectional_dynamic_rnn(fw_cells, bw_cells, drop_in,
+                                                      dtype=tf.float32)        
     
     batch_range = tf.range(tf.shape(input_lengths)[0])
     batch_outs  = tf.stack([batch_range, input_lengths], axis=1)
@@ -63,12 +88,12 @@ def bidir_gru(input_vecs, input_lengths, isTraining, PARAMS):
     
 
 def bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS):
-    fw_cells = tf.contrib.rnn.GRUBlockCellV2(100)    
-    bw_cells = tf.contrib.rnn.GRUBlockCellV2(100)    
+    fw_cells = tf.contrib.rnn.GRUBlockCellV2(80)    
+    bw_cells = tf.contrib.rnn.GRUBlockCellV2(80)    
 
     drop_in = tf.layers.dropout(input_vecs,
                                 noise_shape=[tf.shape(input_vecs)[0], tf.shape(input_vecs)[1], 1],
-                                rate=0.2, training=isTraining)
+                                rate=0.3, training=isTraining)
 
     outputs, states = tf.nn.bidirectional_dynamic_rnn(fw_cells, bw_cells, drop_in, dtype=tf.float32)        
 

@@ -11,6 +11,16 @@ import pandas as pd
 import spacy
 import pickle
 
+def get_epoch_val(params, numepochs, currepoch):
+    tmpCount = 0
+    pval = None
+    for i in range(len(params)):
+        tmpCount += numepochs[i]
+        if currepoch < tmpCount:
+            pval = params[i]
+            break
+    return pval
+
 def keep_token(t):
     return not (t.is_space or t.is_punct or 
                 t.is_stop or t.like_num or
@@ -55,7 +65,7 @@ def load_vocab(fname):
     vocab = pd.read_csv(fname)
     t2id = {t:i for t,i in zip(vocab['tokens'],vocab['ids'])}
     id2t = {i:t for t,i in zip(vocab['tokens'],vocab['ids'])}
-    id2score = {t:s for t,s in zip(vocab['tokens'],vocab['scores']) if s > 0}
+    id2score = {i:s for i,s in zip(vocab['ids'],vocab['scores']) if s > 0}
     return vocab, t2id, id2t, id2score
 
 
