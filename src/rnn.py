@@ -109,8 +109,9 @@ def inputGenerator(df, id2score, t2id, class_loss_weights, PARAMS, randomize=Fal
         batch['docids']  = batchData['id'].tolist()
 
         tmp = [text2ids(c, t2id, id2score, PARAMS['maxwords']) for c in comments]
-        batch['lengths']  = np.array([t[0] for t in tmp])
-        batch['tokenids'] = np.stack([t[1] for t in tmp])
+        batch['lengths']      = np.array([t[0] for t in tmp])
+        batch['tokenids']     = np.stack([t[1] for t in tmp])
+        batch['term_weights'] = np.ones_like(batch['tokenids'])
         
         if len(columns) > 2:            
             labels  = np.array(batchData.iloc[:,2:])
@@ -123,7 +124,7 @@ def inputGenerator(df, id2score, t2id, class_loss_weights, PARAMS, randomize=Fal
             
             batch['labels'] = labels
             batch['loss_weights'] = batch_weights
-                       
+
         batchStart += batchSize            
         yield batch
             
@@ -284,10 +285,11 @@ if __name__ == '__main__':
     
     # DEFINE THE GRAPH
     tf.reset_default_graph()
-    isTraining    = tf.placeholder(tf.bool, name='istraining')
-    input_ids     = tf.placeholder(tf.int32, shape=[None, PARAMS['maxwords']], name='input_ids')
-    input_lengths = tf.placeholder(tf.int32, shape=[None], name='input_lengths')
-    input_labels  = tf.placeholder(tf.int32, shape=[None,len(categories)], name='input_labels')
+    isTraining         = tf.placeholder(tf.bool, name='istraining')
+    input_ids          = tf.placeholder(tf.int32, shape=[None, PARAMS['maxwords']], name='input_ids')
+    input_term_weights = tf.placeholder(tf.float32, shape=[None, PARAMS['maxwords']], name='input_term_weights')
+    input_lengths      = tf.placeholder(tf.int32, shape=[None], name='input_lengths')
+    input_labels       = tf.placeholder(tf.int32, shape=[None,len(categories)], name='input_labels')
     input_loss_weights = tf.placeholder(tf.float32, shape=[None, len(categories)], name='input_weights')
     input_embeddings   = tf.placeholder(tf.float32, shape=vocab_embeddings.shape)
     
@@ -300,6 +302,8 @@ if __name__ == '__main__':
         # NB - put embeddings on GPU!
         tfembeddings = tf.Variable(input_embeddings, trainable=True, name='embedding_vectors')
         input_vecs   = tf.gather(tfembeddings, input_ids)
+        vec_weights  = tf.tile(tf.expand_dims(input_term_weights, 2), [1,1,embeddings.vector_size])
+        input_vecs   = tf.multiply(vec_weights, input_vecs)
         
         #logits       = models.bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS)
         logits       = models.stacked_lstm(input_vecs, input_lengths, isTraining, PARAMS)        
@@ -359,6 +363,7 @@ if __name__ == '__main__':
                                  input_lengths: batch['lengths'],
                                  input_ids:  batch['tokenids'],
                                  input_labels: batch['labels'],
+                                 input_term_weights: batch['term_weights'],
                                  input_loss_weights: batch['loss_weights'],
                                  isTraining: 1}
 
@@ -390,6 +395,7 @@ if __name__ == '__main__':
                                  input_ids:  batch['tokenids'],
                                  input_lengths: batch['lengths'],                                 
                                  input_labels: batch['labels'],
+                                 input_term_weights: batch['term_weights'],                                 
                                  isTraining: 0}
 
                     batch_probits, batch_preds, batch_accuracy = sess.run([probits, predictions, accuracy], feed_dict=feed_dict)
