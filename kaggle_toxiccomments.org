@@ -967,3 +967,66 @@ dd = sess.run(drop_in , feed_dict={ssp: seq2d})
 
 
 #+END_SRC
+
+#+BEGIN_SRC python
+
+seqs = np.array([[4,2,3,4],[1,5,6,7],[0,0,6,1]], dtype=np.float)
+#seqs = np.reshape(seqs,(1,1,seqs.shape[0], seqs.shape[1]))
+
+seqs = np.expand_dims(seqs, 0)
+
+tf.reset_default_graph()
+
+vecs = tf.placeholder(shape=seqs.shape, dtype=tf.float32)
+pooled = tf.layers.max_pooling1d(vecs, 3, 1)
+
+kpool = tf.keras.layers.GlobalMaxPool1D()(vecs)
+
+
+sess = tf.InteractiveSession()
+sess.run(tf.global_variables_initializer())
+
+o = sess.run(kpool, feed_dict={vecs: seqs})
+m = sess.run(pooled, feed_dict={vecs: seqs})
+
+#+END_SRC
+
+
+** <2018-03-07 Wed> Weighting embedding vectors
+
+Just working out the mechanics of weighting input vectors
+
+#+BEGIN_SRC python
+
+  import tensorflow as tf
+  import numpy as np
+  import scipy.stats as stats
+
+  seqs  = np.tile(np.arange(5), (5,1)).T
+  seqs = np.repeat(seqs[None,:,:], 4, axis=0)
+
+  lower, upper = 0.1, 10
+  mu, sigma = 5, 2
+  trn = stats.truncnorm((lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
+  weights = trn.rvs(size=(seqs.shape[0], seqs.shape[1]))
+
+
+  seqs = np.ones((4,5,5))
+  weights = np.random.normal(size=(4,5,1))
+
+  tf.reset_default_graph()
+
+  tf_vecs    = tf.placeholder(shape=(None,5,5), dtype=tf.float32)
+  tf_weights = tf.placeholder(shape=(None,5,1), dtype=tf.float32)
+
+  foo        = tf.tile(tf_weights, [1,1,5])
+
+  seqs_weighted = tf.multiply(foo, tf_vecs)
+
+  sess = tf.InteractiveSession()
+  sess.run(tf.global_variables_initializer())
+
+  o = sess.run(seqs_weighted , feed_dict={tf_vecs: seqs, tf_weights: weights})
+
+
+#+END_SRC
