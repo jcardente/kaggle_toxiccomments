@@ -17,16 +17,15 @@ import pandas as pd
 import spacy
 import pickle
 import tensorflow as tf
-import sklearn.metrics as metrics
 import time
 from timeit import default_timer as timer
-from util import load_data, load_embedding, load_vocab, get_epoch_val
+from util import load_data, load_embedding, load_vocab, get_epoch_val, score_predictions, splitData
 import rnn_models as models
 
 FLAGS = None
 
 PARAMS = {
-    'numEpochs' : [5,5],
+    'numEpochs' : [1,1],
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
@@ -35,59 +34,50 @@ PARAMS = {
     'optBeta1': 0.8,
     'optBeta2': 0.99,
     'optEpsilon': 0.001,
+    'weightEmbeddings': True,
     'lossReweight': True,
     'lossWeightAdjust': 1,
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 }
 
 
-def splitData(df, PARAMS):
-    val_data = pd.DataFrame()
-    train_data = pd.DataFrame()
-    if PARAMS['validationPercentage'] > 0.0:
-        numTotal = len(df.index)
-        numValidation = int(PARAMS['validationPercentage']/100*numTotal)
+def vprint(*args):
+    if FLAGS.verbose:
+        print(*args)
+        
 
-        indices = np.arange(numTotal)
-        np.random.shuffle(indices)
-
-        val_indices  = indices[:numValidation]
-        train_indices = indices[numValidation:]
-
-        val_data = df.iloc[val_indices,:]
-        train_data = df.iloc[train_indices,:]
-
-    else:
-        train_data = df
-
-    return train_data, val_data
-
-
-def text2ids(text, t2id, id2score, maxwords):
+def text2ids(text, t2id, id2score, PARAMS):
     tokens    = text.split(' ')
     token_ids = [t2id[t] for t in tokens if t in t2id]
-    scores    = [(i, id2score[i]) if i in id2score else (i,0) for i in token_ids]
-    scores.sort(key=lambda x: x[1], reverse=True)
+    maxwords  = PARAMS['maxwords']
+    
+    # Score the tokens
+    scored    = [(i,t,id2score[t]) if t in id2score else (i,t,0) for i,t in enumerate(token_ids)]
+    scored.sort(key=lambda x: x[2], reverse=True)
+    scored    = scored[0:maxwords]
 
     # NB - preserve order of words in text
-    keep    = [i for i,_ in scores[0:maxwords]]
-    keep.sort()
+    scored.sort(key=lambda x: x[0])
 
     # NB - offset vocab ids by one since 0 is the padding vector
-    token_ids = [i+1 for i in keep]
-    ntokens   = len(token_ids)
-
+    token_ids    = [t[1]+1 for t in scored]
+    token_scores = np.ones_like(token_ids)    
+    if PARAMS['weightEmbeddings']:
+        token_scores = [t[2] for t in scored]            
+    ntokens      = len(token_ids)
+    
     if len(token_ids) == 0:
-        token_ids = np.zeros(maxwords, dtype=np.int)
+        token_ids    = np.zeros(maxwords, dtype=np.int)
+        token_scores = np.zeros(maxwords, dtype=np.float32)
         ntokens = maxwords
     
     if ntokens < maxwords:
         topad = maxwords - ntokens
-        padded = np.zeros(maxwords, dtype=np.int)
-        padded[:ntokens]  = token_ids
-        token_ids = padded
+        token_ids    = np.pad(token_ids, (0,topad), 'constant', constant_values=0)
+        token_scores = np.pad(token_scores, (0,topad), 'constant', constant_values=0)
 
-    return ntokens, token_ids
+    return ntokens, token_ids, token_scores
+
 
 
 def inputGenerator(df, id2score, t2id, class_loss_weights, PARAMS, randomize=False):
@@ -108,7 +98,7 @@ def inputGenerator(df, id2score, t2id, class_loss_weights, PARAMS, randomize=Fal
         batch = {}
         batch['docids']  = batchData['id'].tolist()
 
-        tmp = [text2ids(c, t2id, id2score, PARAMS['maxwords']) for c in comments]
+        tmp = [text2ids(c, t2id, id2score, PARAMS) for c in comments]
         batch['lengths']      = np.array([t[0] for t in tmp])
         batch['tokenids']     = np.stack([t[1] for t in tmp])
         batch['term_weights'] = np.ones_like(batch['tokenids'])
@@ -129,6 +119,7 @@ def inputGenerator(df, id2score, t2id, class_loss_weights, PARAMS, randomize=Fal
         yield batch
             
 
+        
 def calc_class_loss_weights(df):
     labelcols = df.columns.tolist()[2:]
     labelvals = df[labelcols].as_matrix()
@@ -136,64 +127,31 @@ def calc_class_loss_weights(df):
     log_odds_ratio = np.log((1-probs)/probs)
     return log_odds_ratio
 
-        
-def score_predictions(categories, labels, probs, PARAMS):
-    scores = {}
+
+def prep_embeddings(embeddings, id2t, id2score):
+    important_embeddings = []
+    for i in range(len(id2t)):
+        token = id2t[i]
+        if i in id2score and id2score[i] > 0.0 and token in embeddings.vocab:
+            important_embeddings.append(embeddings.get_vector(token))
+    unknown_embedding = np.mean(np.vstack(important_embeddings), axis=0)
+            
+    vocab_embeddings = np.zeros((len(vocab)+1, embeddings.vector_size))
+    for i in range(len(id2t)):
+        token = id2t[i]
+        if token in embeddings.vocab:
+            # NB - Vector 0 is used for padding. Therefore, vocab IDs
+            #      are offset by one. This same convention needs
+            #      to honored when generating ids for batches.
+            vocab_embeddings[i+1,:] = embeddings.get_vector(token)
+        elif i in id2score:
+            # NB - if this term has a score but no embedding
+            #      set it to average of important terms
+            #      instead of zero
+            vocab_embeddings[i+1,:] = unknown_embedding
     
-    if labels.shape != probs.shape:
-        print('Uh oh, labels and probabilities shapes dont match')
-        return scores
-
-    accuracies = []
-    precisions = []
-    recalls    = []
-    f1s        = []
-    rocs       = []
-    npos       = 0
-    for i in range(probs.shape[1]):
-        class_labels  = labels[:,i]
-        class_probs   = probs[:,i]
-        class_pred    = np.zeros_like(class_probs)# round(class_probs)
-        class_pred[np.where(class_probs >= PARAMS['threshold'])] = 1
-        class_npos    = np.sum(class_labels == 1)    
-
-        tmp = {}
-        tmp['npos'] = class_npos
-        tmp['accuracy'] = metrics.accuracy_score(class_labels, class_pred)
-        if np.any(class_labels == 1) and np.any(class_pred == 1):
-            tmp['precision'] = metrics.precision_score(class_labels, class_pred)
-            tmp['recall']    = metrics.recall_score(class_labels, class_pred)
-            tmp['f1']        = metrics.f1_score(class_labels, class_pred)
-        else:
-            tmp['precision'] = 0
-            tmp['recall']    = 0
-            tmp['f1']        = 0
-                                                                    
-        try:
-            tmp['roc'] = metrics.roc_auc_score(class_labels, class_probs)
-        except ValueError:
-            tmp['roc'] = 0
-
-        npos += class_npos
-        accuracies.append(tmp['accuracy'])
-        precisions.append(tmp['precision'])
-        recalls.append(tmp['recall'])
-        f1s.append(tmp['f1'])            
-        rocs.append(tmp['roc'])
-
-        scores[categories[i]] = tmp
-
-    scores['all'] = {}
-    scores['all']['npos']      = npos
-    scores['all']['accuracy']  = np.mean(accuracies)
-    scores['all']['precision'] = np.mean(precisions)
-    scores['all']['recall']    = np.mean(recalls)
-    scores['all']['f1']        = np.mean(f1s)
-    scores['all']['roc']   = np.mean(rocs)
-    
-    return scores
-
-
+    return vocab_embeddings
+            
 
 if __name__ == '__main__':
 
@@ -252,7 +210,13 @@ if __name__ == '__main__':
                         default=0,
                         dest='validationPercentage',
                         help='Validation percentage')
-    
+
+    parser.add_argument('--noverbose',
+                        action='store_false',
+                        default=True,
+                        dest='verbose',
+                        help='Disble verbose output')
+                            
     FLAGS, unparsed = parser.parse_known_args()
     PARAMS['validationPercentage'] = FLAGS.validationPercentage
 
@@ -261,27 +225,8 @@ if __name__ == '__main__':
     # Load word embeddings and vocab
     embeddings   = load_embedding(FLAGS.embedfile)
     vocab, t2id, id2t, id2score = load_vocab(FLAGS.vocabfile)
+    vocab_embeddings = prep_embeddings(embeddings, id2t, id2score)
 
-    important_embeddings = []
-    for i in range(len(id2t)):
-        token = id2t[i]
-        if i in id2score and id2score[i] > 0.0 and token in embeddings.vocab:
-            important_embeddings.append(embeddings.get_vector(token))
-    unknown_embedding = np.mean(np.vstack(important_embeddings), axis=0)
-            
-    vocab_embeddings = np.zeros((len(vocab)+1, embeddings.vector_size))
-    for i in range(len(id2t)):
-        token = id2t[i]
-        if token in embeddings.vocab:
-            # NB - Vector 0 is used for padding. Therefore, vocab IDs
-            #      are offset by one. This same convention needs
-            #      to honored when generating ids for batches.
-            vocab_embeddings[i+1,:] = embeddings.get_vector(token)
-        elif i in id2score:
-            # NB - if this term has a score but no embedding
-            #      set it to average of important terms
-            #      instead of zero
-            vocab_embeddings[i+1,:] = unknown_embedding
     
     # DEFINE THE GRAPH
     tf.reset_default_graph()
@@ -305,8 +250,8 @@ if __name__ == '__main__':
         vec_weights  = tf.tile(tf.expand_dims(input_term_weights, 2), [1,1,embeddings.vector_size])
         input_vecs   = tf.multiply(vec_weights, input_vecs)
         
-        #logits       = models.bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS)
-        logits       = models.stacked_lstm(input_vecs, input_lengths, isTraining, PARAMS)        
+        logits       = models.bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS)
+        #logits       = models.stacked_lstm(input_vecs, input_lengths, isTraining, PARAMS)        
         
         loss   = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
                                                          labels=tf.cast(input_labels,dtype=tf.float32))
@@ -345,16 +290,16 @@ if __name__ == '__main__':
 
         if FLAGS.doTrain:
             
-            print("Reading training data...")
+            vprint("Reading training data...")
             data = load_data(FLAGS.trainfile)
             class_loss_weights = calc_class_loss_weights(data)
             
             train_data, val_data = splitData(data, PARAMS)
-            print('Training samples {}..'.format(len(train_data)))
-            print('Validation samples {}..'.format(len(val_data)))
+            vprint('Training samples {}..'.format(len(train_data)))
+            vprint('Validation samples {}..'.format(len(val_data)))
 
-            for epoch in range(sum(PARAMS['numEpochs'])):            
-                print("Epoch " + str(epoch))
+            for epoch in range(sum(PARAMS['numEpochs'])):
+                vprint("Epoch " + str(epoch))
 
                 epochLearningRate = get_epoch_val(PARAMS['optLearningRates'], PARAMS['numEpochs'], epoch)
                 timeStart = timer()
@@ -369,7 +314,7 @@ if __name__ == '__main__':
 
                     _ , batch_loss, batch_probs, batch_preds, batch_accuracy = sess.run([training_op, loss, probits, predictions, accuracy], feed_dict=feed_dict)
                     batchCount += 1                
-                    if batchCount % batchReportInterval == 0:
+                    if FLAGS.verbose and batchCount % batchReportInterval == 0:
                         timeEnd = timer()
                         trainRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
                         print("Batch {} loss {} accuracy {} rate {}".format(batchCount, batch_loss, batch_accuracy, trainRate))
@@ -377,14 +322,14 @@ if __name__ == '__main__':
                         timeStart = timer()
 
             trainTimeEnd = timer()
-            print("Total Training Time {:.2f}m".format((trainTimeEnd-trainTimeStart)/60))
+            vprint("Total Training Time {:.2f}m".format((trainTimeEnd-trainTimeStart)/60))
 
             if FLAGS.checkpoint:
                 chkpFullName = os.path.join(FLAGS.checkpointDir, FLAGS.checkpointName)
                 save_path    = saver.save(sess, chkpFullName)
             
             if not val_data.empty:
-                print("Starting validation....")
+                vprint("Starting validation....")
                 batchCount   = 0
                 valTimeStart = timer()            
                 timeStart    = valTimeStart
@@ -403,18 +348,18 @@ if __name__ == '__main__':
                     val_labels.append(batch['labels'])
                     
                     batchCount += 1            
-                    if batchCount % batchReportInterval == 0:
+                    if FLAGS.verbose and batchCount % batchReportInterval == 0:
                         timeEnd = timer()
                         valRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
                         print("Batch {} Accuracy {:.5f} Rate {:.2f}".format(batchCount, batch_accuracy, valRate))
                         timeStart = timer()
 
                 valTimeEnd  = timer()
-                print("Validation Total Time {:.2f}m".format((valTimeEnd-valTimeStart)/60))
+                vprint("Validation Total Time {:.2f}m".format((valTimeEnd-valTimeStart)/60))
 
-
+                # Print results of validation
                 val_probits = np.vstack(val_probits)
-                val_labels  = np.vstack(val_labels) #val_data.iloc[:, 2:].as_matrix()
+                val_labels  = np.vstack(val_labels) 
                 scores      = score_predictions(categories, val_labels, val_probits, PARAMS)
 
                 cols        = ['npos','accuracy','precision','recall','f1','roc']
@@ -434,17 +379,17 @@ if __name__ == '__main__':
             if not FLAGS.doTrain:
                 chkpFullName = os.path.join(FLAGS.checkpointDir, FLAGS.checkpointName)
                 metaFile     = chkpFullName + '.meta'                                
-                print('Restoring model {}'.format(chkpFullName))
+                vprint('Restoring model {}'.format(chkpFullName))
                 if not isfile(metaFile):
                     print("Error, checkpoint file doesnt exist")
                     sys.exit(1)
                 saver.restore(sess,chkpFullName)
             
 
-            print('Loading test data....')
+            vprint('Loading test data....')
             test_data = load_data(FLAGS.testfile)    
 
-            print("Starting inference....")
+            vprint("Starting inference....")
             batchCount   = 0
             infTimeStart = timer()            
             timeStart    = infTimeStart
@@ -468,14 +413,14 @@ if __name__ == '__main__':
                     timeStart = timer()
 
             infTimeEnd = timer()
-            print("Total Inference Time {:.2f}m".format((infTimeEnd-infTimeStart)/60))
+            vprint("Total Inference Time {:.2f}m".format((infTimeEnd-infTimeStart)/60))
 
 
             inf_probits = np.vstack(inf_probits)
             df = pd.DataFrame(data=inf_probits, index=inf_ids, columns = categories)
             df.index.name = 'id'
 
-            print("Saving submission....")
+            vprint("Saving submission....")
             
             df.to_csv(FLAGS.subfile, index=True, float_format='%.5f')
 
