@@ -929,7 +929,6 @@ ft_model = KeyedVectors.load_word2vec_format('data/crawl-300d-2M.vec')
 
 #+END_SRC
 
-
 ** <2018-03-06 Tue> Validating max and average pooling
 
 Making sure that max and average 1D pooling work in the exptected way
@@ -990,7 +989,6 @@ o = sess.run(kpool, feed_dict={vecs: seqs})
 m = sess.run(pooled, feed_dict={vecs: seqs})
 
 #+END_SRC
-
 
 ** <2018-03-07 Wed> Weighting embedding vectors
 
