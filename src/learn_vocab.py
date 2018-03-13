@@ -14,9 +14,9 @@ import numpy as np
 from gensim.corpora import Dictionary
 from gensim.models.tfidfmodel import TfidfModel
 from gensim.matutils import corpus2csc
-from sklearn.feature_selection import chi2, SelectFdr
+from sklearn.feature_selection import chi2
 from util import load_data
-from collections import Counter
+
 
 FLAGS = None
 
@@ -61,7 +61,8 @@ if __name__ == '__main__':
     all_dictionary.filter_extremes(no_below=10, no_above=0.5)
     all_dictionary.compactify()
     nterms = len(all_dictionary)
-
+    tokens_df = pd.DataFrame([all_dictionary[i] for i in range(nterms)], columns=['token'])
+    
     print("Creating tfidf models...")
     train_corpus = [all_dictionary.doc2bow(d) for d in train_docs]
     test_corpus  = [all_dictionary.doc2bow(d) for d in test_docs]
@@ -69,7 +70,6 @@ if __name__ == '__main__':
     train_tfidf_model  = TfidfModel(train_corpus, dictionary=all_dictionary)
     test_tfidf_model   = TfidfModel(test_corpus,  dictionary=all_dictionary)
 
-    print("Converting to tfidf vectors...")
     train_tfidf  = train_tfidf_model[train_corpus]
     train_vecs   = corpus2csc(train_tfidf, num_terms=nterms).T
 
@@ -83,41 +83,38 @@ if __name__ == '__main__':
     np.nan_to_num(chi2_scores,copy=False)
     chi2_min = np.min(chi2_scores[np.nonzero(chi2_scores)])
     chi2_scores[np.where(chi2_scores == 0)] = chi2_min
-    
 
+    chi2_scores = np.log(chi2_scores)
+    chi2_scores -= np.min(chi2_scores)
+    chi2_scores /= np.max(chi2_scores)
+    chi2_df = pd.DataFrame(data=chi2_scores, columns=['chi2_' + l for l in labelcols])
+
+    
     print('Scoring train terms using IDF delta...')
     idfdelta_scores = np.zeros((nterms, nlabels), dtype=np.float)
-
     for i,l in enumerate(labelcols):
         cl = train_data[l]
 
         pos = train_vecs[np.where(cl==1)[0],:]
         neg = train_vecs[np.where(cl==0)[0],:]
 
-        pos_df = (pos > 0.0).sum(0)
-        neg_df = (neg > 0.0).sum(0)
+        pos_df = np.squeeze(np.array((pos > 0.0).sum(0)))
+        neg_df = np.squeeze(np.array((neg > 0.0).sum(0)))
 
         npos = pos.shape[0]
         nneg = neg.shape[0]
 
         v1 = np.multiply((npos - pos_df + 0.5), (neg_df + 0.5))
         v2 = np.multiply((nneg - neg_df + 0.5), (pos_df + 0.5))
-        
-        idf_delta = 
-        
-        model_fdr = SelectFdr(chi2, alpha=0.025)
-        model_fdr.fit(train_vecs, cl)
-        ids = model_fdr.get_support(indices=True)
-        for i in ids:
-            terms[all_dictionary[i]] += model_fdr.scores_[i]
 
-    print('Scoring terms using tfidf difference...')
-            
+        idfdelta_scores[:,i]  = np.log(np.divide(v2,v1))
+
+    idfdelta_scores -= np.min(idfdelta_scores)
+    idfdelta_scores /= np.max(idfdelta_scores)
+    idfdelta_df = pd.DataFrame(data=idfdelta_scores, columns=['idfdelta_' + l for l in labelcols])
+
     print('Saving results...')
-    ids   = range(len(all_dictionary))
-    vocab = pd.DataFrame()
-    vocab['ids'] = ids
-    vocab['tokens'] = [all_dictionary[i] for i in ids]
-    vocab['scores'] = [terms[t] if t in terms else 0 for t in vocab['tokens']]
-    vocab.to_csv(FLAGS.vocabfile, index=False)
+    all_df = pd.concat([tokens_df, chi2_df, idfdelta_df], axis=1)
+    all_df.index.name = 'id'
+    all_df.to_csv(FLAGS.vocabfile, index=True)
     
