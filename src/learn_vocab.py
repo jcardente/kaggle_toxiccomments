@@ -46,6 +46,8 @@ if __name__ == '__main__':
     test_data  = load_data(FLAGS.testfile)
     train_comments = train_data['comment_text'].tolist()
     test_comments  = test_data['comment_text'].tolist()
+
+    train_data['any'] =  np.max(train_data.iloc[:,2:], axis=1)    
     labelcols      = train_data.columns.tolist()[2:]    
 
     ntrain  = len(train_comments)
