@@ -13,6 +13,7 @@ import spacy
 import pickle
 import sklearn.metrics as metrics
 from sklearn.model_selection import train_test_split
+from sklearn.neighbors import NearestNeighbors
 
 
 def splitData(df, PARAMS):
@@ -39,10 +40,12 @@ def get_epoch_val(params, numepochs, currepoch):
             break
     return pval
 
+
 def keep_token(t):
     return not (t.is_space or t.is_punct or 
                 t.is_stop or t.like_num or
                 t.like_url or t.like_email)
+
 
 def lematize_comment(comment):
     return [ t.lemma_ for t in comment if keep_token(t)]
@@ -79,19 +82,71 @@ def load_embedding(fname):
     return ft_mode
 
 
-def load_vocab(fname):
-    vocab = pd.read_csv(fname)
-    t2id = {t:i for t,i in zip(vocab['tokens'],vocab['ids'])}
-    id2t = {i:t for t,i in zip(vocab['tokens'],vocab['ids'])}
-    id2score = {i:s for i,s in zip(vocab['ids'],vocab['scores']) if s > 0}
-    return vocab, t2id, id2t, id2score
+class Vocab():
 
+    def __init__(self,vocabfile):
+        self.vdf  = pd.read_csv(vocabfile)
+        # NB - Vector 0 is used for padding. Therefore, vocab IDs
+        #      are offset by one. 
+        self.vdf['id'] = self.vdf['id'] + 1
+        self.t2id = {t:i for t,i in zip(self.vdf['token'],self.vdf['id'])}
+        self.ntokens = self.vdf.shape[0]        
+        self.embed_vecs   = None
+        self.hasEmbedding = set()
 
-def load_chi2(fname):
-    f = open(fname, 'rb')
-    term_scores = pickle.load(f)
-    return term_scores
+        self.scores     = self.vdf.iloc[:,2:].as_matrix()
+        self.score_size = self.scores[1]
 
+        self.scores_quick = np.mean(self.scores, axis=1)
+
+        
+    def token2id(self,token):
+        if token in self.t2id:
+            return self.t2id[token]        
+        return None
+
+    def id2token(self, id):
+        # NB - ids are offset by 1 relative to vdf
+        #      dataframe rows        
+        return self.vdf['token'][id-1]
+
+    def id2scores(self,id):
+        # NB - ids are offset by 1 relative to vdf
+        #      dataframe rows
+        return self.scores[id-1,:]
+
+    def id2quickscore(self, id, mode='max'):
+        return self.scores_quick[id-1]
+        
+    def add_embeddings(self,embedfile):
+        embeddings = load_embedding(embedfile)
+        self.embed_vecs = np.zeros((self.ntokens+1, embeddings.vector_size), dtype=np.float)
+
+        for i in range(self.ntokens):
+            token = self.vdf['token'][i]
+            id    = self.vdf['id'][i]
+            if token in embeddings.vocab:
+                self.hasEmbedding.add(id)
+                self.embed_vecs[id,:] = embeddings.get_vector(token)
+
+        # NB - Many tokens from this corpus dont have an embedding. This
+        #      code uses the chi2 and idf delta scores with a K nearest neighbors
+        #      model to estimate an embedding. 
+        hasembed_ids    = list(self.hasEmbedding)
+        hasembed_scores = self.vdf.iloc[[idx-1 for idx in hasembed_ids], 2:]
+        unknown_ids     = list(set(self.vdf['id']).difference(self.hasEmbedding))
+        unknown_scores  = self.vdf.iloc[[idx-1 for idx in unknown_ids],2:]
+        
+        knn_model = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(hasembed_scores)
+        _, nearest = knn_model.kneighbors(unknown_scores)
+
+        for i in range(len(unknown_ids)):
+            id = unknown_ids[i]
+            neighbors = nearest[i]
+            vecs = np.vstack([self.embed_vecs[n,:] for n in neighbors])
+            self.embed_vecs[id,:] = np.mean(vecs,axis=0)
+
+            
 
 def score_predictions(categories, labels, probs, PARAMS):
     scores = {}

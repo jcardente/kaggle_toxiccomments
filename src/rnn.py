@@ -19,13 +19,13 @@ import pickle
 import tensorflow as tf
 import time
 from timeit import default_timer as timer
-from util import load_data, load_embedding, load_vocab, get_epoch_val, score_predictions, splitData
+from util import load_data, Vocab, get_epoch_val, score_predictions, splitData
 import rnn_models as models
 
 FLAGS = None
 
 PARAMS = {
-    'numEpochs' : [1,1],
+    'numEpochs' : [10,2],
     'batchSize': 512,
     'validationPercentage': 0,
     'threshold': 0.5,
@@ -35,6 +35,7 @@ PARAMS = {
     'optBeta2': 0.99,
     'optEpsilon': 0.001,
     'weightEmbeddings': True,
+    'trainEmbeddings': False,
     'lossReweight': True,
     'lossWeightAdjust': 1,
     'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
@@ -46,41 +47,42 @@ def vprint(*args):
         print(*args)
         
 
-def text2ids(text, t2id, id2score, PARAMS):
+def text2ids(text, vocab, PARAMS):
     tokens    = text.split(' ')
-    token_ids = [t2id[t] for t in tokens if t in t2id]
+    token_ids = [vocab.token2id(t) for t in tokens]
+    token_ids = [id for id in token_ids if id != None]
     maxwords  = PARAMS['maxwords']
     
-    # Score the tokens
-    scored    = [(i,t,id2score[t]) if t in id2score else (i,t,0) for i,t in enumerate(token_ids)]
-    scored.sort(key=lambda x: x[2], reverse=True)
-    scored    = scored[0:maxwords]
+    ntokens = len(token_ids)
+    if ntokens == 0:
+        token_ids    = np.zeros(1, dtype=np.int)
+        token_scores = np.zeros((1,vocab.id2scores(1).shape[0]), dtype=np.float32)
+        ntokens      = 1
+        
+    else:
+        # Score the tokens
+        scored    = [(i,id,vocab.id2quickscore(id, mode='mean')) for i,id in enumerate(token_ids)]
+        scored.sort(key=lambda x: x[2], reverse=True)
+        scored    = scored[0:maxwords]
 
-    # NB - preserve order of words in text
-    scored.sort(key=lambda x: x[0])
+        # NB - preserve order of words in text
+        scored.sort(key=lambda x: x[0])
 
-    # NB - offset vocab ids by one since 0 is the padding vector
-    token_ids    = [t[1]+1 for t in scored]
-    token_scores = np.ones_like(token_ids)    
-    if PARAMS['weightEmbeddings']:
-        token_scores = [t[2] for t in scored]            
-    ntokens      = len(token_ids)
-    
-    if len(token_ids) == 0:
-        token_ids    = np.zeros(maxwords, dtype=np.int)
-        token_scores = np.zeros(maxwords, dtype=np.float32)
-        ntokens = maxwords
+        token_ids    = [s[1] for s in scored]
+        token_scores = np.vstack([vocab.id2scores(id) for id in token_ids])
+        ntokens = len(token_ids)
+        
     
     if ntokens < maxwords:
         topad = maxwords - ntokens
         token_ids    = np.pad(token_ids, (0,topad), 'constant', constant_values=0)
-        token_scores = np.pad(token_scores, (0,topad), 'constant', constant_values=0)
+        token_scores = np.pad(token_scores, [(0,topad),(0,0)], 'constant', constant_values=0)
 
     return ntokens, token_ids, token_scores
 
 
 
-def inputGenerator(df, id2score, t2id, class_loss_weights, PARAMS, randomize=False):
+def inputGenerator(df, vocab, class_loss_weights, PARAMS, randomize=False):
     # NB - df is a pandas dataframe
     columns    = df.columns.tolist()
     rowidxs    = np.arange(df.shape[0])
@@ -98,10 +100,10 @@ def inputGenerator(df, id2score, t2id, class_loss_weights, PARAMS, randomize=Fal
         batch = {}
         batch['docids']  = batchData['id'].tolist()
 
-        tmp = [text2ids(c, t2id, id2score, PARAMS) for c in comments]
+        tmp = [text2ids(c, vocab, PARAMS) for c in comments]
         batch['lengths']      = np.array([t[0] for t in tmp])
         batch['tokenids']     = np.stack([t[1] for t in tmp])
-        batch['term_weights'] = np.ones_like(batch['tokenids'])
+        batch['term_scores']  = np.stack([t[2] for t in tmp])
         
         if len(columns) > 2:            
             labels  = np.array(batchData.iloc[:,2:])
@@ -128,29 +130,6 @@ def calc_class_loss_weights(df):
     return log_odds_ratio
 
 
-def prep_embeddings(embeddings, id2t, id2score):
-    important_embeddings = []
-    for i in range(len(id2t)):
-        token = id2t[i]
-        if i in id2score and id2score[i] > 0.0 and token in embeddings.vocab:
-            important_embeddings.append(embeddings.get_vector(token))
-    unknown_embedding = np.mean(np.vstack(important_embeddings), axis=0)
-            
-    vocab_embeddings = np.zeros((len(vocab)+1, embeddings.vector_size))
-    for i in range(len(id2t)):
-        token = id2t[i]
-        if token in embeddings.vocab:
-            # NB - Vector 0 is used for padding. Therefore, vocab IDs
-            #      are offset by one. This same convention needs
-            #      to honored when generating ids for batches.
-            vocab_embeddings[i+1,:] = embeddings.get_vector(token)
-        elif i in id2score:
-            # NB - if this term has a score but no embedding
-            #      set it to average of important terms
-            #      instead of zero
-            vocab_embeddings[i+1,:] = unknown_embedding
-    
-    return vocab_embeddings
             
 
 if __name__ == '__main__':
@@ -218,25 +197,27 @@ if __name__ == '__main__':
                         help='Disble verbose output')
                             
     FLAGS, unparsed = parser.parse_known_args()
+    
     PARAMS['validationPercentage'] = FLAGS.validationPercentage
-
     categories = PARAMS['categories'] 
 
     # Load word embeddings and vocab
-    embeddings   = load_embedding(FLAGS.embedfile)
-    vocab, t2id, id2t, id2score = load_vocab(FLAGS.vocabfile)
-    vocab_embeddings = prep_embeddings(embeddings, id2t, id2score)
-
+    vprint('Loading vocabulary...')
+    vocab = Vocab(FLAGS.vocabfile)
+    vocab.add_embeddings(FLAGS.embedfile)
+    scores_size = vocab.id2scores(1).shape[0]
+    embed_shape = vocab.embed_vecs.shape
     
+        
     # DEFINE THE GRAPH
     tf.reset_default_graph()
     isTraining         = tf.placeholder(tf.bool, name='istraining')
     input_ids          = tf.placeholder(tf.int32, shape=[None, PARAMS['maxwords']], name='input_ids')
-    input_term_weights = tf.placeholder(tf.float32, shape=[None, PARAMS['maxwords']], name='input_term_weights')
+    input_term_scores  = tf.placeholder(tf.float32, shape=[None, PARAMS['maxwords'], scores_size], name='input_term_scores')
     input_lengths      = tf.placeholder(tf.int32, shape=[None], name='input_lengths')
     input_labels       = tf.placeholder(tf.int32, shape=[None,len(categories)], name='input_labels')
     input_loss_weights = tf.placeholder(tf.float32, shape=[None, len(categories)], name='input_weights')
-    input_embeddings   = tf.placeholder(tf.float32, shape=vocab_embeddings.shape)
+    input_embeddings   = tf.placeholder(tf.float32, shape=embed_shape)
     
     learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
     threshold     = tf.constant(PARAMS['threshold'], dtype=tf.float32, name='probit_threshold')
@@ -245,10 +226,17 @@ if __name__ == '__main__':
     with tf.device("/gpu:0"):
 
         # NB - put embeddings on GPU!
-        tfembeddings = tf.Variable(input_embeddings, trainable=True, name='embedding_vectors')
+        tfembeddings = tf.Variable(input_embeddings, trainable=PARAMS['trainEmbeddings'], name='embedding_vectors')
         input_vecs   = tf.gather(tfembeddings, input_ids)
-        vec_weights  = tf.tile(tf.expand_dims(input_term_weights, 2), [1,1,embeddings.vector_size])
-        input_vecs   = tf.multiply(vec_weights, input_vecs)
+
+        if PARAMS['weightEmbeddings']:
+            #term_weights = tf.reduce_mean(input_term_scores, axis=2)
+            #vec_weights  = tf.tile(tf.expand_dims(term_weights, 2), [1,1,embed_shape[1]])
+
+            # NB - Use a 1D convolution to determine how best to combine weights
+            term_weights = tf.layers.conv1d(input_term_scores, filters=1, kernel_size=1, strides=1)
+            vec_weights  = tf.tile(term_weights, [1,1,embed_shape[1]])
+            input_vecs   = tf.multiply(vec_weights, input_vecs)
         
         logits       = models.bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS)
         #logits       = models.stacked_lstm(input_vecs, input_lengths, isTraining, PARAMS)        
@@ -286,7 +274,7 @@ if __name__ == '__main__':
     epochLearningRate   = 0.001
     trainTimeStart      = timer()    
     with tf.Session() as sess:
-        sess.run([init_op_global, init_op_local], feed_dict={input_embeddings: vocab_embeddings})
+        sess.run([init_op_global, init_op_local], feed_dict={input_embeddings: vocab.embed_vecs})
 
         if FLAGS.doTrain:
             
@@ -303,12 +291,12 @@ if __name__ == '__main__':
 
                 epochLearningRate = get_epoch_val(PARAMS['optLearningRates'], PARAMS['numEpochs'], epoch)
                 timeStart = timer()
-                for batch in inputGenerator(train_data, id2score, t2id, class_loss_weights, PARAMS, randomize=True):
+                for batch in inputGenerator(train_data, vocab, class_loss_weights, PARAMS, randomize=True):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_lengths: batch['lengths'],
                                  input_ids:  batch['tokenids'],
                                  input_labels: batch['labels'],
-                                 input_term_weights: batch['term_weights'],
+                                 input_term_scores: batch['term_scores'],
                                  input_loss_weights: batch['loss_weights'],
                                  isTraining: 1}
 
@@ -335,12 +323,12 @@ if __name__ == '__main__':
                 timeStart    = valTimeStart
                 val_probits  = []
                 val_labels   = []
-                for batch in inputGenerator(val_data, id2score, t2id, class_loss_weights, PARAMS, randomize=False):
+                for batch in inputGenerator(val_data, vocab, class_loss_weights, PARAMS, randomize=False):
                     feed_dict = {learning_rate: epochLearningRate,
                                  input_ids:  batch['tokenids'],
                                  input_lengths: batch['lengths'],                                 
                                  input_labels: batch['labels'],
-                                 input_term_weights: batch['term_weights'],                                 
+                                 input_term_scores: batch['term_scores'],                                 
                                  isTraining: 0}
 
                     batch_probits, batch_preds, batch_accuracy = sess.run([probits, predictions, accuracy], feed_dict=feed_dict)
@@ -395,10 +383,11 @@ if __name__ == '__main__':
             timeStart    = infTimeStart
             inf_ids      = []
             inf_probits  = []
-            for batch in inputGenerator(test_data, id2score, t2id, None, PARAMS, randomize=False):
+            for batch in inputGenerator(test_data, vocab, None, PARAMS, randomize=False):
                 feed_dict = {learning_rate: epochLearningRate,
                              input_ids:  batch['tokenids'],
-                             input_lengths: batch['lengths'],                             
+                             input_lengths: batch['lengths'],
+                             input_term_scores: batch['term_scores'],                             
                              isTraining: 0}
 
                 batch_probits = sess.run(probits, feed_dict=feed_dict)
