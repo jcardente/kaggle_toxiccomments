@@ -97,7 +97,8 @@ class Vocab():
         self.scores     = self.vdf.iloc[:,2:].as_matrix()
         self.score_size = self.scores[1]
 
-        self.scores_quick = np.mean(self.scores, axis=1)
+        #self.scores_quick = np.mean(self.scores, axis=1)
+        self.scores_quick = self.vdf['idfdelta_any'].as_matrix()
 
         
     def token2id(self,token):
