@@ -1028,3 +1028,33 @@ Just working out the mechanics of weighting input vectors
 
 
 #+END_SRC
+
+** <2018-03-13 Tue> Refactoring vocab
+
+#+BEGIN_SRC python
+
+        embed_vecs = np.zeros((ntokens+1, raw_embeddings.vector_size), dtype=np.float)
+
+        for i in range(ntokens):
+            token = vdf['token'][i]
+            if token in raw_embeddings.vocab:
+                # NB - Vector 0 is used for padding. Therefore, vocab IDs
+                #      are offset by one. This same convention needs
+                #      to honored when generating ids for batches.
+                hasEmbedding.add(i)
+                embed_vecs[i+1,:] = raw_embeddings.get_vector(token)
+
+
+    def id2score(id, mode='max'):
+        # NB - ids are offset by 1 relative to vdf
+        #      dataframe rows        
+        scores = vocab.scores[id-1,:]
+
+        modes = {
+            'max': np.max,
+            'mean': np.mean
+        }
+
+        return modes[mode](scores)
+
+#+END_SRC
