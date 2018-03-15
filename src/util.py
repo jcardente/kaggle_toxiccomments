@@ -85,7 +85,9 @@ def load_embedding(fname):
 class Vocab():
 
     def __init__(self,vocabfile):
-        self.vdf  = pd.read_csv(vocabfile)
+        self.vdf  = pd.read_csv(vocabfile, na_filter=False)
+        self['token'].fillna('', inplace=True)
+        
         # NB - Vector 0 is used for padding. Therefore, vocab IDs
         #      are offset by one. 
         self.vdf['id'] = self.vdf['id'] + 1
