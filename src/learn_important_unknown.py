@@ -11,11 +11,12 @@
 import argparse
 import sys
 import pandas as pd
+import numpy as np
 from gensim.corpora import Dictionary
 from gensim.models.tfidfmodel import TfidfModel
 from gensim.matutils import corpus2csc
 from sklearn.feature_selection import chi2, SelectFdr
-from util import load_data, load_embedding
+from util import load_data, load_embedding, Vocab
 from collections import Counter
 
 FLAGS = None
@@ -23,64 +24,68 @@ FLAGS = None
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('-t',type=str,
+
+    parser.add_argument('--train',type=str,
                         required=True,
                         dest='trainfile',
                         help='Train file')
+
+    parser.add_argument('--test',type=str,
+                        required=True,
+                        dest='testfile',
+                        help='Test file')
+    
+    parser.add_argument('-v',type=str,
+                        required=True,
+                        dest='vocabfile',
+                        help='vocab file')
+                
+    parser.add_argument('-e',type=str,
+                        required=True,
+                        dest='embedfile',
+                        help='Embedding file')
 
     parser.add_argument('-o', type=str,
                         required=True,
                         dest='outfile',
                         help='Output file')
     
-    parser.add_argument('-e',type=str,
-                        required=True,
-                        dest='embedfile',
-                        help='Embedding file')
-        
     FLAGS, unparsed = parser.parse_known_args()
 
     print('Reading data...')
     train_data = load_data(FLAGS.trainfile)
-    comments_text = train_data['comment_text']
-    comments_text = comments_text.tolist()
+    test_data  = load_data(FLAGS.testfile)
+    train_comments = train_data['comment_text'].tolist()
+    test_comments  = test_data['comment_text'].tolist()
 
-    print('Finding unknown tokens...')
-    ft_model = load_embedding(FLAGS.embedfile)
-    docs = [c.split(' ') for c in comments_text]
-    for i in range(len(docs)):
-        docs[i] = [t for t in docs[i] if not t in ft_model.vocab]
-        
-    print('Building dictionary...')
-    comments_dictionary = Dictionary(docs)
-    comments_corpus     = [comments_dictionary.doc2bow(d) for d in docs]
+    train_data['any'] =  np.max(train_data.iloc[:,2:], axis=1)    
+    labelcols      = train_data.columns.tolist()[2:]    
 
-    print("Creating tfidf model...")        
-    model_tfidf     = TfidfModel(comments_corpus)
+    ntrain  = len(train_comments)
+    ntest   = len(test_comments)
+    nlabels = len(labelcols)
 
-    print("Converting to tfidf vectors...")
-    comments_tfidf  = model_tfidf[comments_corpus]
-    comments_vecs   = corpus2csc(comments_tfidf).T
+    print('Loading vocab and embeddings...')
+    vocab = Vocab(FLAGS.vocabfile)
+    vocab.add_embeddings(FLAGS.embedfile)
+    #embeddings = load_embedding(FLAGS.embedfile)
+    
 
-    print('Finding important terms...')
-    labelcols = train_data.columns.tolist()[2:]
-    unknowns = Counter()
-    for l in labelcols:
-        cl = train_data[l]
-        model_fdr = SelectFdr(chi2, alpha=0.025)
-        model_fdr.fit(comments_vecs, cl)
-        ids = model_fdr.get_support(indices=True)
-        for i in ids:
-            unknowns[i] += model_fdr.scores_[i]
+    token_ids = set(vocab.vdf['id'].tolist())
+
+    unknown_ids = token_ids.difference(vocab.hasEmbedding)
+    unknown_scored = [(i,vocab.id2quickscore(i)) for i in unknown_ids]
+
+    unknown_scored.sort(key=lambda x: x[1], reverse=True)
+
+    unknown_scored = [(vocab.id2token(i), s) for i,s in unknown_scored]
 
     print('Saving results...')
-    unknowns_ranked = [(i, s, comments_dictionary.dfs[i]) for i,s in unknowns.items()]
-    unknowns_ranked.sort(key=lambda x: x[2], reverse=True)
-    unknowns_dict = {
-        'scores': [s for i,s,c in unknowns_ranked],
-        'ndocs' : [c for i,s,c in unknowns_ranked],
-        'tokens': [comments_dictionary[i] for i,s,c in unknowns_ranked]
+    unknown_dict = {
+        'score': [s for t,s in unknown_scored],
+        'token': [t for t,s in unknown_scored],
         }
     
-    df = pd.DataFrame(unknowns_dict)
+    df = pd.DataFrame(unknown_dict)
     df.to_csv(FLAGS.outfile, index=False)
+    
