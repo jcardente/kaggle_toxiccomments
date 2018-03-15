@@ -12,10 +12,26 @@
 import argparse
 import pandas as pd
 import re
+import regex
 from util import load_data
 
 FLAGS = None
 
+
+replacement_regexs = [
+    (r'f[*]ck', 'fuck'),
+    (r'f[*]+', 'fuck'),
+    (r'f[*]cker', 'fucker'),
+    (r'fukkers', 'fuckers'),
+    (r'sh[!]t', 'shit') 
+]
+
+
+def replace_word(token):
+    for p,s in replacement_regexs:
+        token = re.sub(p,s,token)
+    return token
+    
 
 def clean_token(token):
 
@@ -23,30 +39,20 @@ def clean_token(token):
     token = re.sub(r'[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+', '', token)
 
     # Get rid of things that look like a time
-    token = re.sub(r'[0-9]{1,2}:[0-9]{1,2}','', token)
+    token = re.sub(r'[0-9]{1,2}:[0-9]{1,2}[a-zA-Z]*$','', token)
+
+    # Get rid of things that look like ethernet mac addresses
+    token = re.sub('^[0-9a-fA-F:]+$','',token)
+    
+    # Get rid of things that look like style tags
+    token = re.sub(r'(style|class|colspan|valign|vspan|width|rowspan)[=].*$','',token)
+    token = re.sub(r'(border|cellspacing|align|cellpadding)[=].*$','',token)
 
     # Get rid of anything not in latin character set
     token = regex.sub(r'[^\p{Latin}]','',token)
     
-    # Get rid of trailing equals
-    token = re.sub(r'[=]+$','',token)
-
-    # Get rid of repeated punctuations like exclamation points.
-    token = re.sub(r'[!]+','', token)
-
-    # Get rid of leading |
-    token = re.sub(r'^[|]','',token)
-
-    # Get rid of trailing |
-    token = re.sub(r'[|]$','',token)
-    
-    # Get rid of leading -, often in names
-    token = re.sub(r'[-]+','',token)
-    
     return token
-
-
-    
+ 
 
 if __name__ == '__main__':
     
@@ -64,23 +70,22 @@ if __name__ == '__main__':
     FLAGS, unparsed = parser.parse_known_args()
 
     print('Reading data...')
-    train_data = load_data(FLAGS.trainfile)
-    comments_text = train_data['comment_text']
+    data = load_data(FLAGS.trainfile)
+    comments_text = data['comment_text']
     comments_text = comments_text.tolist()
 
+    print('Cleaning text...')
     for i in range(len(comments_text)):
         comment = comments_text[i]
+        new_tokens = []
+        for token in comment.split(' '):
+            token = replace_word(token)
+            token = clean_token(token)
 
-        # Get rid of things that look like IP addresses.
-        comment = re.sub(r'[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+', '', comment)
+            if len(token) > 0:
+                new_tokens.append(token)
+        new_comment = ' '.join(new_tokens)
+        comments_text[i] = new_comment
 
-        # Get rid of things that look like a time
-        comment = re.sub(r'[0-9]{1,2}:[0-9]{1,2}','', comment)
-
-        # Get rid of trailing equals
-        comment = re.sub(r'[=]+$','',comment)
-        
-        # Get rid of repeated punctuations like exclamation points.
-        comment = re.sub(r'[!]+','', comment)
-
-        # Replace
+    print('Saving results...')
+    data.to_csv(FLAGS.outfile, index=False)
