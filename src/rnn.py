@@ -17,29 +17,14 @@ import pandas as pd
 import spacy
 import pickle
 import tensorflow as tf
+import yaml
 import time
 from timeit import default_timer as timer
 from util import load_data, Vocab, get_epoch_val, score_predictions, splitData
 import rnn_models as models
 
-FLAGS = None
 
-PARAMS = {
-    'numEpochs' : [10,2],
-    'batchSize': 512,
-    'validationPercentage': 0,
-    'threshold': 0.5,
-    'maxwords': 50,
-    'optLearningRates': [0.001,0.0001],
-    'optBeta1': 0.8,
-    'optBeta2': 0.99,
-    'optEpsilon': 0.001,
-    'weightEmbeddings': True,
-    'trainEmbeddings': False,
-    'lossReweight': True,
-    'lossWeightAdjust': 1,
-    'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-}
+FLAGS = None
 
 
 def vprint(*args):
@@ -141,6 +126,11 @@ if __name__ == '__main__':
                         help='Training data file')
 
     parser.add_argument('-p',type=str,
+                        default='params.yml',
+                        dest='paramfile',
+                        help='Parameters file')
+
+    parser.add_argument('-i',type=str,
                         default='data/test.csv',
                         dest='testfile',
                         help='Test data file')
@@ -197,7 +187,8 @@ if __name__ == '__main__':
                         help='Disble verbose output')
                             
     FLAGS, unparsed = parser.parse_known_args()
-    
+
+    PARAMS = yaml.load(open(FLAGS.paramFile,'r'))    
     PARAMS['validationPercentage'] = FLAGS.validationPercentage
     categories = PARAMS['categories'] 
 
