@@ -86,7 +86,7 @@ class Vocab():
 
     def __init__(self,vocabfile):
         self.vdf  = pd.read_csv(vocabfile, na_filter=False)
-        self['token'].fillna('', inplace=True)
+        self.vdf['token'].fillna('', inplace=True)
         
         # NB - Vector 0 is used for padding. Therefore, vocab IDs
         #      are offset by one. 
