@@ -188,7 +188,7 @@ if __name__ == '__main__':
                             
     FLAGS, unparsed = parser.parse_known_args()
 
-    PARAMS = yaml.load(open(FLAGS.paramFile,'r'))    
+    PARAMS = yaml.load(open(FLAGS.paramfile,'r'))    
     PARAMS['validationPercentage'] = FLAGS.validationPercentage
     categories = PARAMS['categories'] 
 
@@ -341,17 +341,24 @@ if __name__ == '__main__':
                 val_labels  = np.vstack(val_labels) 
                 scores      = score_predictions(categories, val_labels, val_probits, PARAMS)
 
-                cols        = ['npos','accuracy','precision','recall','f1','roc']
-                headers     = '{:^13}' + ''.join(['{:^10}'] * len(cols))
-                print(headers.format('',*cols))
-                rows        = categories +  ['all']
-                rowfmt      = '{:^13}'+ ''.join(['{:^10.4f}'] * len(cols))
-                for i in range(len(rows)):
-                    cn = rows[i]
-                    cs = scores[cn]
-                    cv = [cn] + [cs[x] for x in cols]
-                    print(rowfmt.format(*cv))
-                    
+                if FLAGS.verbose:
+                    cols        = ['npos','accuracy','precision','recall','f1','roc']
+                    headers     = '{:^13}' + ''.join(['{:^10}'] * len(cols))
+                    print(headers.format('',*cols))
+                    rows        = categories +  ['all']
+                    rowfmt      = '{:^13}'+ ''.join(['{:^10.4f}'] * len(cols))
+                    for i in range(len(rows)):
+                        cn = rows[i]
+                        cs = scores[cn]
+                        cv = [cn] + [cs[x] for x in cols]
+                        print(rowfmt.format(*cv))
+                else:
+                    print('{},{},{},{},{},{}'.format(FLAGS.paramfile,
+                                            scores['all']['accuracy']
+                                            scores['all']['precision'],
+                                            scores['all']['recall'],
+                                            scores['all']['f1'],
+                                            scores['all']['roc'])
 
         if FLAGS.doTest:
 
