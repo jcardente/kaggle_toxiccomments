@@ -68,8 +68,6 @@ if __name__ == '__main__':
     print('Loading vocab and embeddings...')
     vocab = Vocab(FLAGS.vocabfile)
     vocab.add_embeddings(FLAGS.embedfile)
-    #embeddings = load_embedding(FLAGS.embedfile)
-    
 
     token_ids = set(vocab.vdf['id'].tolist())
 
