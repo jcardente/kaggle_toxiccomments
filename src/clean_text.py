@@ -19,12 +19,17 @@ FLAGS = None
 
 
 replacement_regexs = [
-    (r'f[*]ck', 'fuck'),
-    (r'f[*]+', 'fuck'),
-    (r'f[*]cker', 'fucker'),
+    (r'f[*]+[c]{0,1}[k]{0,1}', 'fuck'),
     (r'fukkers', 'fuckers'),
-    (r'sh[!]t', 'shit') 
+    (r'sh[!]t', 'shit'),
+    (r'b[*]tch', 'bitch'),
+    (r'tw[*]t', 'twat'),
+    (r'a[*]+hole', 'asshole'),
+    
 ]
+
+#    (r'f[*]+k', 'fuck'),
+#    (r'f[*]cker', 'fucker'),
 
 
 def replace_word(token):
