@@ -19,18 +19,18 @@ FLAGS = None
 
 
 replacement_regexs = [
+    (r'f[*]{3}', 'fuck'),
+    (r'fu[*]k', 'fuck'),    
     (r'f[*]+[c]{0,1}[k]{0,1}', 'fuck'),
     (r'fukkers', 'fuckers'),
-    (r'sh[!]t', 'shit'),
+    (r'sh[!*]t', 'shit'),
     (r'b[*]tch', 'bitch'),
     (r'tw[*]t', 'twat'),
     (r'a[*]+hole', 'asshole'),
-    
+    (r'faggit', 'faggot'),
+    (r'shouldn[;\'d]t', 'should not'),
+    (r'-(PRON|pron)-', '')
 ]
-
-#    (r'f[*]+k', 'fuck'),
-#    (r'f[*]cker', 'fucker'),
-
 
 def replace_word(token):
     for p,s in replacement_regexs:
@@ -49,10 +49,15 @@ def clean_token(token):
     # Get rid of things that look like ethernet mac addresses
     token = re.sub('^[0-9a-fA-F:]+$','',token)
     
-    # Get rid of things that look like style tags
+    # Get rid of things that look like style tags or markup
     token = re.sub(r'(style|class|colspan|valign|vspan|width|rowspan)[=].*$','',token)
     token = re.sub(r'(border|cellspacing|align|cellpadding)[=].*$','',token)
+    token = re.sub(r'^.*(border|color|padding|spacing):.*$','', token)
+    token = re.sub(r'color:[#][0-9a-fA-F]{6}','',token)
+    token = re.sub(r'bgcolor[=].*$','', token)
 
+    token = re.sub(r'index\.php\?title','', token)
+    
     # Get rid of anything not in latin character set
     token = regex.sub(r'[^\p{Latin}]','',token)
     
@@ -75,7 +80,7 @@ if __name__ == '__main__':
     FLAGS, unparsed = parser.parse_known_args()
 
     print('Reading data...')
-    data = load_data(FLAGS.trainfile)
+    data = load_data(FLAGS.infile)
     comments_text = data['comment_text']
     comments_text = comments_text.tolist()
 
@@ -93,4 +98,5 @@ if __name__ == '__main__':
         comments_text[i] = new_comment
 
     print('Saving results...')
+    data['comment_text'] = comments_text
     data.to_csv(FLAGS.outfile, index=False)
