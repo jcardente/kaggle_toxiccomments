@@ -1058,3 +1058,14 @@ Just working out the mechanics of weighting input vectors
         return modes[mode](scores)
 
 #+END_SRC
+** <2018-03-17 Sat> Cleaning up text
+
+Last ditch effort to clean up text. Working interactively from clean text script
+
+#+BEGIN_SRC python
+
+xx = [clean_token(replace_word(t)) for t in unknown_tokens]
+gg = [(i,x,uknown_tokens[i]) for i,x in enumerate(xx) if not (x == '' or x in vocab.t2id)]
+
+#+END_SRC
+
