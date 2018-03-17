@@ -11,7 +11,7 @@
 import argparse
 import pandas as pd
 import spacy
-from   util import lematize_comments, load_nlp
+from   util import lematize_comments, load_nlp, load_data
 
 FLAGS = None
 
@@ -37,7 +37,7 @@ if  __name__ == '__main__':
     FLAGS, unparsed = parser.parse_known_args()
 
     print('Reading data...')
-    data = pd.read_csv(FLAGS.infile)
+    data = load_data(FLAGS.infile)
 
     comments_text = data['comment_text']
 
