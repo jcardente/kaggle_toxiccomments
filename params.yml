@@ -1,15 +1,20 @@
-'numEpochs' : [10,2]
-'batchSize': 512
-'validationPercentage': 0
-'threshold': 0.5
-'maxwords': 50
-'optLearningRates': [0.001,0.0001]
-'optBeta1': 0.8
-'optBeta2': 0.99
-'optEpsilon': 0.001
-'weightEmbeddings': true
-'trainEmbeddings': false
-'lossReweight': true
-'lossWeightAdjust': 1
-'categories':  ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-
+numEpochs : [5,3]
+batchSize: 128
+validationPercentage: 0
+threshold: 0.5
+maxwords: 150
+optLearningRates: [0.001,0.0001]
+optBeta1: 0.9
+optBeta2: 0.999
+optEpsilon: 0.001
+weightEmbeddings: true
+trainEmbeddings: false
+lossFunction: cross_entropy
+lossReweight: true
+lossWeightAdjust: 1
+categories:  [toxic, severe_toxic, obscene, threat, insult, identity_hate]
+model: bidir_gru_pooled
+modelParams:
+    fwcells: 80
+    bwcells: 80
+    droprate: 0.10

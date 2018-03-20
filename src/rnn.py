@@ -21,7 +21,7 @@ import yaml
 import time
 from timeit import default_timer as timer
 from util import load_data, Vocab, get_epoch_val, score_predictions, splitData
-import rnn_models as models
+from rnn_models import MODELS
 
 
 FLAGS = None
@@ -180,6 +180,11 @@ if __name__ == '__main__':
                         dest='validationPercentage',
                         help='Validation percentage')
 
+    parser.add_argument('--model', type=str,
+                        default=None,
+                        dest='model',
+                        help='model name')
+    
     parser.add_argument('--noverbose',
                         action='store_false',
                         default=True,
@@ -192,6 +197,10 @@ if __name__ == '__main__':
     PARAMS['validationPercentage'] = FLAGS.validationPercentage
     categories = PARAMS['categories'] 
 
+    if FLAGS.model:
+        PARAMS['model'] = FLAGS.model
+        print('Overring model to {}'.format(FLAGS.model))
+        
     # Load word embeddings and vocab
     vprint('Loading vocabulary...')
     vocab = Vocab(FLAGS.vocabfile)
@@ -221,19 +230,26 @@ if __name__ == '__main__':
         input_vecs   = tf.gather(tfembeddings, input_ids)
 
         if PARAMS['weightEmbeddings']:
-            #term_weights = tf.reduce_mean(input_term_scores, axis=2)
-            #vec_weights  = tf.tile(tf.expand_dims(term_weights, 2), [1,1,embed_shape[1]])
-
             # NB - Use a 1D convolution to determine how best to combine weights
             term_weights = tf.layers.conv1d(input_term_scores, filters=1, kernel_size=1, strides=1)
             vec_weights  = tf.tile(term_weights, [1,1,embed_shape[1]])
             input_vecs   = tf.multiply(vec_weights, input_vecs)
         
-        logits       = models.bidir_gru_pooled(input_vecs, input_lengths, isTraining, PARAMS)
-        #logits       = models.stacked_lstm(input_vecs, input_lengths, isTraining, PARAMS)        
-        
-        loss   = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
-                                                         labels=tf.cast(input_labels,dtype=tf.float32))
+        logits  = MODELS[PARAMS['model']](input_vecs, input_lengths, input_term_scores, isTraining, PARAMS)
+        probits = tf.nn.sigmoid(logits, name="predictions")
+
+        loss = None
+        if PARAMS['lossFunction'] == 'squared_error':
+            loss = tf.squared_difference(probits, tf.cast(input_labels,dtype=tf.float32))
+            
+        elif PARAMS['lossFunction'] == 'cross_entropy':
+            loss = tf.losses.sigmoid_cross_entropy(tf.cast(input_labels,dtype=tf.float32),
+                                                   logits,
+                                                   reduction=tf.losses.Reduction.NONE)
+        else:
+            print('Unknown loss function {}'.format(PARAMS['lossFunction']))
+            sys.exit(-1)
+
         loss   = tf.multiply(loss, input_loss_weights)
         loss   = tf.reduce_sum(loss, name="loss")
         optimizer = tf.train.AdamOptimizer(learning_rate = learning_rate,
@@ -245,7 +261,7 @@ if __name__ == '__main__':
         with tf.control_dependencies(update_ops):
             training_op = optimizer.minimize(loss, global_step=global_step)
         
-        probits     = tf.nn.sigmoid(logits, name="predictions")
+
         cond        = tf.greater(probits, tf.ones_like(probits) * threshold)
         predictions = tf.where(cond,
                                tf.ones_like(probits,dtype=tf.int32),
@@ -275,7 +291,8 @@ if __name__ == '__main__':
             
             train_data, val_data = splitData(data, PARAMS)
             vprint('Training samples {}..'.format(len(train_data)))
-            vprint('Validation samples {}..'.format(len(val_data)))
+            if len(val_data) > 0:
+                vprint('Validation samples {}..'.format(len(val_data)))
 
             for epoch in range(sum(PARAMS['numEpochs'])):
                 vprint("Epoch " + str(epoch))
@@ -307,7 +324,7 @@ if __name__ == '__main__':
                 chkpFullName = os.path.join(FLAGS.checkpointDir, FLAGS.checkpointName)
                 save_path    = saver.save(sess, chkpFullName)
             
-            if not val_data.empty:
+            if len(val_data) > 0:
                 vprint("Starting validation....")
                 batchCount   = 0
                 valTimeStart = timer()            
@@ -354,11 +371,11 @@ if __name__ == '__main__':
                         print(rowfmt.format(*cv))
                 else:
                     print('{},{},{},{},{},{}'.format(FLAGS.paramfile,
-                                            scores['all']['accuracy']
-                                            scores['all']['precision'],
-                                            scores['all']['recall'],
-                                            scores['all']['f1'],
-                                            scores['all']['roc'])
+                                                     scores['all']['accuracy'],
+                                                     scores['all']['precision'],
+                                                     scores['all']['recall'],
+                                                     scores['all']['f1'],
+                                                     scores['all']['roc']))
 
         if FLAGS.doTest:
 

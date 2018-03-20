@@ -17,7 +17,7 @@ from sklearn.neighbors import NearestNeighbors
 
 
 def splitData(df, PARAMS):
-    val_data   = None
+    val_data   = pd.DataFrame()
     train_data = None
     if PARAMS['validationPercentage'] > 0.0:
         labels = df.iloc[:,2:]
