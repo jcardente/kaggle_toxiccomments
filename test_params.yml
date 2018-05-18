@@ -1,0 +1,19 @@
+numEpochs: [1,1]
+batchSize: 128
+validationPercentage: 0
+threshold: 0.5
+maxwords: 50
+optLearningRates: [0.001,0.0001]
+optBeta1: 0.9
+optBeta2: 0.999
+optEpsilon: 0.001
+weightEmbeddings: true
+trainEmbeddings: false
+lossFunction: squared_error
+lossReweight: true
+lossWeightAdjust: 1
+categories:  [toxic, severe_toxic, obscene, threat, insult, identity_hate]
+model: bidir_gru_pooled
+modelParams:
+        bidir_gru_pooled:
+                layers: 80
