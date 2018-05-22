@@ -30,6 +30,109 @@ python src/rnn.py -t data/derived/train_50-0.csv -e models/embeddings -c models/
 
 #+END_EXAMPLE
 
+** <2018-05-21 Mon> 
+
+Archiving history of shell commands to figure out how I actually ran this stuff
+
+#+BEGIN_EXAMPLE 
+   11  python src/rnn.py -t data/derived/train_50-0.csv -e models/embeddings -c models/chi2scores.pkl --train --val 5 
+   12  python src/rnn.py -t data/derived/train_50-0.csv -e models/embeddings -c models/chi2scores.pkl --train 
+   13  python src/rnn.py -t data/derived/train_50-0.csv -e models/embeddings -c models/chi2scores.pkl --train  --val 5
+   16  python src/rnn.py -t data/derived/train_50-0.csv -e models/embeddings -c models/chi2scores.pkl --train  --test -p data/derived/test_processed.csv -o submissions/rnn_2018.03.01_21.16.csv
+   26  python src/preprocess.py -i data/train.csv -o data/derived/train_processed.csv -n 16
+   28  python src/preprocess.py -i data/train.csv -o data/derived/train_processed.csv -n 16
+   31  python src/preprocess.py -i data/train.csv -o data/derived/train_processed.csv -n 16
+   35  python src/preprocess.py -i data/test.csv -o data/derived/test_processed.csv -n 16
+   42  python src/preprocess.py -i data/train.csv -o data/derived/train_processed.csv -n 6
+   43  python src/preprocess.py -i data/test.csv -o data/derived/test_processed.csv -n 16
+   53  python -m spacy download en_vectors_web_lg
+   60  python src/preprocess.py -i data/train.csv -o data/derived/train_processed.csv -n 6
+   65  python src/preprocess.py -i data/test.csv -o data/derived/test_processed.csv -n 6
+   67  python src/preprocess.py -i data/test.csv -o data/derived/test_processed.csv -n 6
+   81  python src/preprocess.py -i data/train.csv -o data/derived/train_processed.csv -n 6
+   92  python src/learn_important_unknown.py -i data/derived/train_processed.csv -o data/derived/unknowns.csv -e data/ftvecs.pkl
+   93  python src/learn_important_unknown.py -t data/derived/train_processed.csv -o data/derived/unknowns.csv -e data/ftvecs.pkl
+   95  python src/learn_important_unknown.py -t data/derived/train_processed.csv -o data/derived/unknowns.csv -e data/ftvecs.pkl
+  102  python src/learn_important_unknown.py -t data/derived/train_processed.csv -o data/derived/unknowns.csv -e data/ftvecs.pkl
+  104  python src/learn_important_unknown.py -t data/derived/train_processed.csv -o data/derived/unknowns.csv -e data/ftvecs.pkl
+  107  python src/learn_chi2.py -t data/derived/train_processed.csv -c models/chi2scores.pkl -e data/ftvecs.pkl
+  109  python src/learn_chi2.py -t data/derived/train_processed.csv -c models/chi2scores.pkl -e data/ftvecs.pkl
+  111  python src/learn_chi2.py -t data/derived/train_processed.csv -c models/chi2scores.pkl -e data/ftvecs.pkl
+  113  python src/learn_chi2.py -t data/derived/train_processed.csv -c models/chi2scores.pkl -e data/ftvecs.pkl
+  114  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 5
+  116  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 5
+  118  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 5
+  120  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 5
+  122  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 5
+  127  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 5
+  128  python src/preprocess.py -i data/test.csv -o data/derived/test_processed.csv -n 6
+  129  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 5 --test -p data/derived/test_processed.csv -o tmp/rnn_submit_test.csv
+  130  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 5 
+  131  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 0 --test -p data/derived/test_processed.csv -o submission/rnn_gru_2018.03.04_13.00.csv
+  133  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -c models/chi2scores.pkl --train --val 0 --test -p data/derived/test_processed.csv -o submissions/rnn_gru_2018.03.04_13.00.csv
+  143  python src/learn_vocab.py --train data/derived/train_processed.csv --test data/derived/test_processed.csv -v models/vocab.csv
+  145  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  147  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  148  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 0 --test -p data/derived/test_processed.csv -o submissions/rnn_gru_2018.03.05_08.50.csv
+  149  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  151  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  153  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  154  history | grep python
+  155  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 0 --test -p data/derived/test_processed.csv -o submissions/rnn_gru_2018.03.05_20.30.csv
+  156  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  158  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  159  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 0 --test -p data/derived/test_processed.csv -o submissions/rnn_gru_2018.03.05_21.30.csv
+  160  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  164  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  165  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 0 --test -p data/derived/test_processed.csv -o submissions/rnn_gru_2018.03.06_09.00.csv
+  166  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  172  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  174  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  175  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5 --noverbose
+  177  python src/learn_vocab.py --train data/derived/train_processed.csv --test data/derived/test_processed.csv  -v tmp/vocab_foo.csv
+  185  python src/learn_vocab.py --train data/derived/train_processed.csv --test data/derived/test_processed.csv  -v models/vocab.csv
+  188  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  190  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  191  python src/learn_vocab.py --train data/derived/train_processed.csv --test data/derived/test_processed.csv -v tmp/vocab.csv
+  193  python src/learn_vocab.py --train data/derived/train_processed.csv --test data/derived/test_processed.csv -v tmp/vocab.csv
+  197  python src/rnn.py -t data/derived/train_processed.csv -e data/ftvecs.pkl -v models/vocab.csv --train --val 5
+  223  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v modesl/vocabcleaned2.csv --val 5 --train
+  225  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v modesl/vocabcleaned2.csv --val 5 --train
+  226  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --val 5 --train
+  227  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --val 5 --train 
+  228  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --val 5 --train  --model simple_lstm
+  229  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --val 5 --train  --model conv1d_termscores
+  230  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --val 5 --train  --model avgvec
+  231  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --val 5 --train 
+  232  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --train --test --val 0 -i data/derived/test_cleaned2.csv -o submissions/rnn_2018.03.18_20.35.csv 
+  233  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --val 5 --train --model stacked_bidir_lstm
+  234  python src/rnn.py -t data/derived/train_cleaned2.csv -p params.yml -e data/ftvecs.pkl -v models/vocabcleaned2.csv --val 5 --train 
+  262  python src/extract_best_fragments.py -i data/derived/train_processed.csv -o data/derived/train_20-3.csv --maxwords 20 --windowsize 3
+  264  python src/preprocess.py -i data/test.csv -o data/derived/test_processed.csv -n 8
+  265  python src/extract_best_fragments.py -i data/derived/train_processed.csv -o tmp/train_50_tmp.csv --train -c models/chi2scores.pkl
+  266  python src/extract_best_fragments.py -i data/derived/test_processed.csv -o data/derived/test_50.csv -c models/chi2scores.pkl
+  416  python src/preprocess.py -i data/train.csv -o tmp/train_proc.csv
+  421  python src/preprocess.py -i tmp/train_proc.csv -o tmp/train_proc2.csv
+  428  python ../src/preprocess.py -i ../data/test.csv -o test_proc.csv
+  429  python ../src/preprocess.py -i test_proc.csv -o test_proc2.csv
+  431  python ../src/learn_vocab.py --train train_proc.csv --test test_proc.csv -v vocab1.csv
+  432  python ../src/learn_vocab.py --train train_proc2.csv --test test_proc2.csv -v vocab2.csv
+  436  python ../src/learn_important_unknown.py --train train_proc.csv --test test_proc.csv -v vocab1.csv -e ../data/ftvecs.pkl -o unknowns1.csv
+  441  python ../src/learn_important_unknown.py --train train_proc2.csv --test test_proc2.csv -v vocab2.csv -e ../data/ftvecs.pkl -o unknowns2.csv
+  444  python ../src/clean_text.py -i train_proc2.csv -o train_cleaned2.csv
+  445  python ../src/clean_text.py -i test_proc2.csv -o test_cleaned2.csv
+  446  python ../src/learn_vocab.py --train train_cleaned2.csv --test test_cleaned2.csv -v vocabcleaned2.csv
+  449  python ../src/learn_important_unknown.py --train train_cleaned2.csv --test test_cleaned2.csv -v vocabcleaned2.csv -e ../data/ftvecs.pkl -o unknownscleaned2.csv
+  457  python ../src/clean_text.py -i train_proc2.csv -o train_cleaned2.csv
+  458  python ../src/clean_text.py -i test_proc2.csv -o test_cleaned2.csv
+  459  python ../src/learn_vocab.py --train train_cleaned2.csv --test test_cleaned2.csv -v vocabcleaned2.csv
+  462  python ../src/learn_important_unknown.py --train train_cleaned2.csv --test test_cleaned2.csv -v vocabcleaned2.csv -e ../data/ftvecs.pkl -o unknownscleaned2.csv
+  958  ipython
+  969  ipython
+ 1006  history | grep python
+ 1007  history | grep python > runlog.txt
+
+#+END_EXAMPLE
 * Notes
 ** <2018-02-07 Wed> Initial look at the data
 
